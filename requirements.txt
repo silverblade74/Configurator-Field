@@ -1,0 +1,5 @@
+# Pin Streamlit to allow patch updates (for bugfixes/security) within 1.35.x
+streamlit~=1.35.0
+
+# Require pandas 2.2 or higher, but less than 3.0
+pandas>=2.2,<3
