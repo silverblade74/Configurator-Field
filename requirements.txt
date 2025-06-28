@@ -4,3 +4,6 @@ streamlit~=1.35.0
 # Require pandas version 2.2 or higher, but below 3.0
 pandas>=2.2,<3
 pyyaml
+openpyxl
+python-pptx
+reportlab
