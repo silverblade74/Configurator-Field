@@ -184,4 +184,4 @@ if st.button("🚀 Generate Recommendations", type="primary"):
     st.download_button("💾 Download ZIP bundle",
                        data=zbuf.getvalue(),
                        file_name="shi_assessment_bundle.zip",
-                       mime="application/zip")pyy
+                       mime="application/zip")
