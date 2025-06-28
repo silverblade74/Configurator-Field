@@ -1,0 +1,86 @@
+# rule_authoring_template.yaml (Final Production-Ready Version)
+# SHI Field Configurator – Structured Recommendation Rules
+# Each rule block supports: when, recommend, reason, tradeoffs, tags, score, source
+
+# ─── DATACENTER ─────────────────────────────────────────────────────────────
+datacenter:
+  - when:
+      dc_workload: "AI / ML"
+      gpu_required: "Yes"
+    recommend: |
+      🚀 Deploy **NVIDIA GB200 NVL72** GPU cluster with **Dell XE9680** for ultra-scale AI workloads.
+    reason: "AI workload with GPU requirement"
+    tradeoffs: "Higher power and cooling requirements"
+    tags: ["AI", "GPU", "Datacenter"]
+    score: 5
+    source: "Dell Validated Design for AI, Q2 2024"
+
+  - when:
+      dc_workload: "Database / OLTP"
+      iops: ">=100000"
+    recommend: |
+      💾 Use **Pure Storage FlashArray//XL** for ultra-low latency transactional systems.
+    reason: "Database workload with high IOPS requirement"
+    tradeoffs: "Premium flash investment vs. hybrid disk"
+    tags: ["Database", "IOPS", "Storage"]
+    score: 4
+    source: "Pure Performance Whitepaper, 2024"
+
+# ─── POWER & COOLING ─────────────────────────────────────────────────────────
+power_cooling:
+  - when:
+      rack_density_kw: ">=30"
+    recommend: |
+      ❄️ Deploy **Direct-to-Chip cooling loops** and evaluate CDU placement for >30kW racks.
+    reason: "High rack density exceeds 30kW threshold"
+    tradeoffs: "Facility may require retrofit"
+    tags: ["Cooling", "High-Density"]
+    score: 4
+    source: "ASHRAE Guidelines for High Density, 2023"
+
+# ─── SECURITY ────────────────────────────────────────────────────────────────
+cybersecurity:
+  - when:
+      sec_frameworks: ["CMMC 2.0"]
+    recommend: |
+      🔐 Deploy **CrowdStrike Falcon + CyberArk PAM** to meet CMMC identity segmentation.
+    reason: "CMMC 2.0 selected — needs zero-trust posture"
+    tradeoffs: "Requires privileged identity workflow updates"
+    tags: ["CMMC", "Identity", "Security"]
+    score: 4
+    source: "CMMC Control Map Workbook, 2024"
+
+# ─── NETWORKING ──────────────────────────────────────────────────────────────
+networking:
+  - when:
+      net_fabric: "SD-WAN"
+      site_count: ">=3"
+    recommend: |
+      🌐 Roll out **Versa SASE** fabric with **Juniper Mist Wi-Fi 7** APs at edge sites.
+    reason: "SD-WAN model with multi-site scope"
+    tradeoffs: "Add orchestration platform for policy control"
+    tags: ["SD-WAN", "Edge", "WiFi7"]
+    score: 4
+    source: "Juniper Multi-Site Design Playbook, 2024"
+
+# ─── CLOUD ───────────────────────────────────────────────────────────────────
+saas_cloud:
+  - when:
+      migration_interest: "Yes"
+      cloud_provider: "None"
+    recommend: |
+      ☁️ Launch **SHI One Azure Accelerator** and explore **AWS Bedrock** for GenAI use cases.
+    reason: "Client open to cloud with no provider lock-in"
+    tradeoffs: "Requires app replatforming readiness"
+    tags: ["Cloud", "GenAI", "Azure"]
+    score: 5
+    source: "SHI GenAI Workshop Guide, 2024"
+
+# ─── DEFAULT ─────────────────────────────────────────────────────────────────
+  - recommend: |
+      ✅ Recommend **Cisco UCS X-Series** with **AI Director** for flexible rack-scale infrastructure.
+    reason: "Fallback catch-all recommendation"
+    tradeoffs: "Assumes general-purpose needs"
+    tags: ["Default", "Baseline"]
+    score: 1
+    source: "Cisco UCS Launch Brief, 2023"
