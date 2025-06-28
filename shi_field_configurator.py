@@ -57,7 +57,7 @@ with st.expander("Capture Datacenter Requirements", expanded=False):
         redundancy = st.selectbox("Redundancy Target", ["N", "N+1", "2N"])
 
     with dc_col2:
-        storage_tb = st.number_input("Required Capacity (TB)", min_value=1)
+        storage_tb = st.number_input("Required Capacity (TB)", min_value=1, step=1)
         iops = st.selectbox("IOPS Profile", ["<10 K", "10-50 K", "50-100 K", ">100 K"])
         uptime_sla = st.selectbox("Target Uptime SLA", ["99.9 %", "99.99 %", "99.999 %"])
 
@@ -90,7 +90,7 @@ st.markdown("## 3️⃣ Networking")
 
 with st.expander("Capture Networking Environment", expanded=False):
     net_fabric = st.selectbox("Core Fabric Type", ["3-Tier", "Leaf-Spine", "SD-WAN"])
-    site_count = st.number_input("Number of Sites", min_value=1)
+    site_count = st.number_input("Number of Sites", min_value=1, step=1)
     wan_bandwidth = st.selectbox(
         "Typical WAN Bandwidth", ["<1 Gbps", "1-10 Gbps", ">10 Gbps"]
     )
@@ -121,7 +121,9 @@ with st.expander("Capture SaaS / Cloud Landscape", expanded=False):
 # ──────────────────────────────────────────────────────────────────────────────
 # Recommendation engine
 # ──────────────────────────────────────────────────────────────────────────────
-def build_recommendations() -> Dict[str, str]:
+def build_recommendations(
+    dc_workload, sec_frameworks, net_fabric, migration_interest
+) -> Dict[str, str]:
     rec: Dict[str, str] = {}
 
     # Datacenter
@@ -189,10 +191,12 @@ def build_recommendations() -> Dict[str, str]:
 
 # ── Run button ────────────────────────────────────────────────────────────────
 if st.button("🚀 Generate Recommendations"):
-    recs = build_recommendations()
+    recs = build_recommendations(
+        dc_workload, sec_frameworks, net_fabric, migration_interest
+    )
 
     st.subheader("Preliminary Recommendations")
-    st.json(recs, expanded=False)
+    st.json(recs)
 
     record = {
         "Agency": account_name,
