@@ -1,5 +1,8 @@
-# Allow Streamlit bugfix/patch updates within 1.35.x
-streamlit~=1.35.0
-
-# Require pandas version 2.2 or higher, but below 3.0
+streamlit==1.35.0
 pandas>=2.2,<3
+
+# new for export_utils.py
+openpyxl>=3.1
+XlsxWriter>=3.2
+reportlab>=4.1
+python-pptx>=0.6.23
