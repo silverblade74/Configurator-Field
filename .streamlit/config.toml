@@ -1,0 +1,26 @@
+# .streamlit/config.toml
+# ───────────────────────────────────────────────────────────────
+# Server settings
+[server]
+headless      = true          # suppress sign-up prompt
+address       = "0.0.0.0"     # bind on all interfaces (Replit / Docker)
+port          = "$PORT"       # let Replit set the container port
+runOnSave     = true          # hot-reload when you edit files
+
+# Client settings
+[client]
+toolbarMode   = "minimal"     # hides the hamburger / “deploy” buttons
+
+# Theme  – SHI red on a light base
+[theme]
+base          = "light"
+primaryColor  = "#DC1E35"     # SHI red
+secondaryBackgroundColor = "#F7F9FC"
+textColor     = "#222222"
+font          = "sans serif"
+
+# Optional dark theme – uncomment if you prefer automatic dark mode
+# [theme.enhanced_dark]
+# base        = "dark"
+# primaryColor= "#DC1E35"
+# font        = "sans serif"
