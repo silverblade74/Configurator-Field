@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SHI Field Configurator – Recommendation Rules
+# ---------------------------------------------------------------------------
+# • Each top-level key (datacenter, power_cooling, …) maps to a tab/section
+#   in the Streamlit UI.  The key is rendered as the domain title.
+# • Under each key is an *ordered* list of rules.  The app evaluates them
+#   top-to-bottom and uses the FIRST rule whose `when` conditions all match.
+# • A rule consists of:
+#     when: {field: value, field2: value2, …}
+#       - Keys must match the form-state variable names in app.py
+#       - Values are *string-matched* unless you prefix with ">="
+#         (numeric “greater-or-equal” comparison)
+#       - Lists work for multiselect fields (e.g., sec_frameworks)
+#     recommend: |
+#       Multi-line Markdown/emoji text shown to the AE when the rule fires
+#
+# • You can inject captured values inside {{double_braces}} for dynamic text.
+# • Leave off `when:` to create a default “catch-all” rule that always matches
+#   if no earlier rule fires.
+# ─────────────────────────────────────────────────────────────────────────────
+
+datacenter:
+  # 1️⃣ AI / ML workload
+  - when: {dc_workload: "AI / ML"}
+    recommend: |
+      🔹 Deploy **NVIDIA GB200 NVL72** GPU pods with **Dell PowerStore Prime QLC**
+      arrays for high-density flash and 30× faster model training.
+
+  # 2️⃣ VDI workload
+  - when: {dc_workload: "VDI"}
+    recommend: |
+      🔹 Run **Nutanix Cloud Platform** on **Dell VxRail D-Series** edge nodes
+      with **NVIDIA L40S** GPUs for AI-assisted virtual desktops.
+
+  # 3️⃣ Default catch-all
+  - recommend: |
+      🔹 Standardise on **Cisco UCS X-Series** with UCS AI Director for
+      composable rack-scale infrastructure.
+
+power_cooling:
+  - when: {cooling_type: "Immersion"}
+    recommend: |
+      🔹 Size CDUs for ≥ {{rack_density_kw}} kW racks and use Shell M-110
+      dielectric coolant; plan Tier-IV power isolation.
+
+  - when: {rack_density_kw: ">=30"}
+    recommend: |
+      🔹 Adopt direct-to-chip liquid loops; upgrade chiller ΔT to 8 °C.
+
+  - recommend: |
+      🔹 Implement hot-aisle containment and upgrade CRAH units if rack
+      density exceeds 15 kW.
+
+cybersecurity:
+  - when: {sec_frameworks: ["CJIS"]}
+    recommend: |
+      🔹 Integrate **Palo Alto Cortex XSIAM** with **Okta Adaptive MFA**
+      to automate CJIS Section 5 badge compliance.
+
+  - recommend: |
+      🔹 Deploy **CrowdStrike Falcon Complete XDR 3.0** with **Zscaler SSE**
+      for end-to-end zero-trust posture.
+
+networking:
+  - when: {net_fabric: "Leaf-Spine"}
+    recommend: |
+      🔹 Build an **Arista 7800 / 7050X5** 800 G fabric and orchestrate
+      with **Juniper Apstra 5.x** for intent-based operations.
+
+  - when: {net_fabric: "SD-WAN"}
+    recommend: |
+      🔹 Roll out **Versa Unified SASE** across {{site_count}} sites and
+      add Wi-Fi 7 **Mist AP45** campus access points.
+
+  - recommend: |
+      🔹 Refresh the 3-tier core with **Juniper QFX5700** or **Aruba CX10300**.
+
+saas_cloud:
+  - when: {migration_interest: "Yes"}
+    recommend: |
+      🔹 Launch an **SHI One Azure Landing-Zone Accelerator** and extend
+      to **AWS Bedrock** for sovereign GenAI RAG workloads.
+
+  - when: {migration_interest: "Exploring"}
+    recommend: |
+      🔹 Schedule an **SHI AI-Readiness & FinOps workshop** to benchmark
+      cloud TCO vs. on-prem Grace-Blackwell clusters.
+
+  - recommend: |
+      🔹 Maintain current on-prem workloads; revisit cloud strategy after
+      FY{{budget_band}} budget review.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EXPANSION TIPS (keep or delete these comments)
+# ---------------------------------------------------------------------------
+# • Add more rules by copying the "- when: …" block and adjusting conditions.
+# • Use Markdown for bullets, bold, links, emojis (Streamlit renders them).
+# • Numeric comparisons: only ">=" is supported in this simple parser.
+#   Extend app.py if you need <=, ranges, or AND/OR logic.
+# • Multiselect fields (e.g., sec_frameworks) match if the list *contains* the
+#   value you specify in the rule.
+# • Catch-all rule (no `when`) should always be last.
+# • After editing, commit & push – app reloads new rules automatically.
+# ─────────────────────────────────────────────────────────────────────────────
