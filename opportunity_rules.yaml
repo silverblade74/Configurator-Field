@@ -1,0 +1,59 @@
+# opportunity_rules.yaml (Final Version)
+# Rules for highlighting sales opportunities
+
+opportunities:
+  - when:
+      dc_workload: "AI / ML"
+      gpu_required: "Yes"
+    recommend: |
+      📈 **AI Infrastructure Opportunity**: Customer has ML workloads and GPU demand.
+      Recommend quoting **Dell XE9680** or **NVIDIA DGX H100**.
+    reason: "AI workload with explicit GPU need"
+    tradeoffs: "CapEx increase for GPU scaling"
+    tags: ["AI", "GPU"]
+    score: 5
+    source: "Dell AI Quote Pack, Q1 2024"
+
+  - when:
+      cooling_type: "Immersion"
+      rack_density_kw: ">=30"
+    recommend: |
+      ❄️ **Thermal Upgrade Opportunity**: Immersion cooling + high density detected.
+      Offer CDUs, dielectric fluids, and 2N power upgrades.
+    reason: "High rack density and immersion cooling"
+    tradeoffs: "Extended install timelines"
+    tags: ["Cooling", "Density"]
+    score: 4
+    source: "ASHRAE Tier IV Conversion Guide"
+
+  - when:
+      migration_interest: "Yes"
+      cloud_provider: "None"
+    recommend: |
+      ☁️ **Cloud Acceleration Opportunity**: No current cloud footprint.
+      Quote **Landing Zone Setup + FinOps Assessment**.
+    reason: "Cloud interest with no provider lock-in"
+    tradeoffs: "Replatforming may delay timelines"
+    tags: ["Cloud", "Migration"]
+    score: 4
+    source: "SHI FinOps Kit 2024"
+
+  - when:
+      siem_tool: "None"
+    recommend: |
+      🔐 **Security Stack Gap**: No SIEM present.
+      Position XDR + MDR bundles from CrowdStrike or SentinelOne.
+    reason: "Client lacks SIEM tooling"
+    tradeoffs: "Onboarding MDR team requires policy tuning"
+    tags: ["Security", "SIEM", "MDR"]
+    score: 3
+    source: "Security Stack Optimization Kit"
+
+  - recommend: |
+      🧰 **General Expansion Potential**: No major gaps, but standardization and cloud readiness still valuable.
+      Offer roadmap workshop + assessment bundle.
+    reason: "Fallback general opportunity"
+    tradeoffs: "Client may not perceive urgency"
+    tags: ["Default", "Expansion"]
+    score: 1
+    source: "SHI Readiness Toolkit 2024"
