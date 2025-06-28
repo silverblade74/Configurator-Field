@@ -1,117 +1,50 @@
-# export_utils.py
-"""
-Tiny helpers that turn the in-memory `bundle` dict from app.py
-into Excel, PDF, and PowerPoint byte-streams for download.
-
-• to_excel_bytes(bundle)  → bytes
-• to_pdf_bytes(bundle)    → bytes
-• to_pptx_bytes(bundle)   → bytes
-"""
-
+# export_utils.py – Finalized Export Helpers
 import io
-from typing import Dict
-
 import pandas as pd
-from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from pptx import Presentation
-from pptx.util import Inches, Pt
+from pptx.util import Inches
 
-
-# ────────────────────────────────────────────────────────────────────────────
-# Excel
-# ────────────────────────────────────────────────────────────────────────────
-def to_excel_bytes(bundle: Dict) -> bytes:
-    """Return an .xlsx file in memory."""
+def to_excel_bytes(bundle: dict) -> bytes:
     output = io.BytesIO()
-
-    # Flatten dicts into DataFrames
-    meta_df = pd.DataFrame(bundle["Metadata"], index=[0])
-    capture_df = pd.json_normalize(bundle["Capture"]).T.reset_index()
-    capture_df.columns = ["Field", "Value"]
-    rec_df = pd.DataFrame(
-        list(bundle["Recommendations"].items()), columns=["Domain", "Recommendation"]
-    )
-
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        meta_df.to_excel(writer, sheet_name="Metadata", index=False)
-        capture_df.to_excel(writer, sheet_name="Capture", index=False)
-        rec_df.to_excel(writer, sheet_name="Recommendations", index=False)
-
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        pd.DataFrame([bundle['Metadata']]).to_excel(writer, sheet_name='Metadata', index=False)
+        pd.DataFrame([bundle['Capture']]).to_excel(writer, sheet_name='Form Inputs', index=False)
+        pd.DataFrame.from_dict(bundle['Recommendations'], orient='index').to_excel(writer, sheet_name='Recommendations')
+        pd.DataFrame.from_dict(bundle.get('Opportunities', {}), orient='index').to_excel(writer, sheet_name='Opportunities')
     return output.getvalue()
 
-
-# ────────────────────────────────────────────────────────────────────────────
-# PDF  (simple 1-page text dump)
-# ────────────────────────────────────────────────────────────────────────────
-def to_pdf_bytes(bundle: Dict) -> bytes:
+def to_pdf_bytes(bundle: dict) -> bytes:
     output = io.BytesIO()
-    c = canvas.Canvas(output, pagesize=LETTER)
-    width, height = LETTER
-    x, y = 40, height - 40
-
-    def draw_line(text: str, offset: int = 14):
-        nonlocal y
-        c.drawString(x, y, text)
-        y -= offset
-
-    c.setFont("Helvetica-Bold", 12)
-    draw_line("SHI Field Configurator – Assessment Summary", 18)
-
-    c.setFont("Helvetica", 10)
-    for k, v in bundle["Metadata"].items():
-        draw_line(f"{k}: {v}")
-
-    draw_line("")
-    draw_line("Capture", 16)
-    for k, v in bundle["Capture"].items():
-        draw_line(f"• {k}: {v}")
-
-    draw_line("")
-    draw_line("Recommendations", 16)
-    for k, v in bundle["Recommendations"].items():
-        draw_line(f"• {k}: {v}")
-
+    c = canvas.Canvas(output, pagesize=letter)
+    text = c.beginText(50, 750)
+    text.setFont("Helvetica", 10)
+    text.textLine("SHI Field Configurator – PDF Export")
+    text.textLine(f"Date: {bundle['Metadata'].get('visit_date')}")
+    text.textLine("---")
+    for section, recs in bundle['Recommendations'].items():
+        text.textLine(f"{section}:")
+        for rec in recs:
+            text.textLine(f"  - {rec['recommend'][:90]}...")
+    c.drawText(text)
     c.showPage()
     c.save()
     return output.getvalue()
 
-
-# ────────────────────────────────────────────────────────────────────────────
-# PowerPoint  (1 slide)
-# ────────────────────────────────────────────────────────────────────────────
-def to_pptx_bytes(bundle: Dict) -> bytes:
+def to_pptx_bytes(bundle: dict) -> bytes:
     prs = Presentation()
-    slide = prs.slides.add_slide(prs.slide_layouts[5])  # blank layout
-    title_box = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(1))
-    title_tf = title_box.text_frame
-    title_tf.text = "SHI Field Configurator – Summary"
-    title_tf.paragraphs[0].font.size = Pt(24)
+    title_slide = prs.slides.add_slide(prs.slide_layouts[0])
+    title_slide.shapes.title.text = "SHI Field Configurator"
+    title_slide.placeholders[1].text = f"{bundle['Metadata']['account_name']} – {bundle['Metadata']['visit_date']}"
 
-    body_box = slide.shapes.add_textbox(Inches(0.5), Inches(1.3), Inches(9), Inches(6))
-    tf = body_box.text_frame
-    tf.word_wrap = True
-    tf.margin_bottom = 0
-
-    def add_line(text: str, bold=False):
-        p = tf.add_paragraph()
-        p.text = text
-        p.font.size = Pt(11)
-        p.font.bold = bold
-
-    add_line("Metadata", bold=True)
-    for k, v in bundle["Metadata"].items():
-        add_line(f"• {k}: {v}")
-
-    add_line("")  # spacer
-    add_line("Capture", bold=True)
-    for k, v in bundle["Capture"].items():
-        add_line(f"• {k}: {v}")
-
-    add_line("")  # spacer
-    add_line("Recommendations", bold=True)
-    for k, v in bundle["Recommendations"].items():
-        add_line(f"• {k}: {v}")
+    for section, recs in bundle['Recommendations'].items():
+        slide = prs.slides.add_slide(prs.slide_layouts[1])
+        slide.shapes.title.text = section
+        content = slide.placeholders[1].text_frame
+        for rec in recs:
+            p = content.add_paragraph()
+            p.text = f"- {rec['recommend'][:150]}"
 
     output = io.BytesIO()
     prs.save(output)
