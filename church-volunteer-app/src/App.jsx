@@ -10,6 +10,7 @@ import Leaderboard from './pages/Leaderboard'
 import Badges from './pages/Badges'
 import Profile from './pages/Profile'
 import AdminDashboard from './pages/AdminDashboard'
+import LeaderDashboard from './pages/LeaderDashboard'
 
 export default function App() {
   return (
@@ -30,6 +31,11 @@ export default function App() {
         <Route path="/leaderboard" element={<Leaderboard />} />
         <Route path="/badges" element={<Badges />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/leaders" element={
+          <ProtectedRoute requiredRole={['admin', 'ministry_leader']}>
+            <LeaderDashboard />
+          </ProtectedRoute>
+        } />
         <Route path="/admin" element={
           <ProtectedRoute requiredRole={['admin', 'ministry_leader']}>
             <AdminDashboard />

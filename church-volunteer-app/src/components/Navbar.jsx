@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Menu, X, LogOut, User, LayoutDashboard, Calendar, Users, Trophy, Award } from 'lucide-react'
+import { Menu, X, LogOut, User, LayoutDashboard, Calendar, Users, Trophy, Award, ClipboardList } from 'lucide-react'
 
 export default function Navbar() {
   const { currentUser, userProfile, logout } = useAuth()
@@ -26,6 +26,7 @@ export default function Navbar() {
   ]
 
   if (isAdmin || isLeader) {
+    navLinks.push({ to: '/leaders', label: 'Leaders', icon: ClipboardList })
     navLinks.push({ to: '/admin', label: 'Admin', icon: LayoutDashboard })
   }
 
