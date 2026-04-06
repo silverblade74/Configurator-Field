@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Menu, X, LogOut, User, LayoutDashboard, Calendar, Users, Trophy, Award } from 'lucide-react'
+import { Menu, X, LogOut, User, LayoutDashboard, Calendar, Users, Trophy, Award, ClipboardList } from 'lucide-react'
 
 export default function Navbar() {
   const { currentUser, userProfile, logout } = useAuth()
@@ -26,6 +26,7 @@ export default function Navbar() {
   ]
 
   if (isAdmin || isLeader) {
+    navLinks.push({ to: '/leaders', label: 'Leaders', icon: ClipboardList })
     navLinks.push({ to: '/admin', label: 'Admin', icon: LayoutDashboard })
   }
 
@@ -37,7 +38,7 @@ export default function Navbar() {
         <div className="flex justify-between h-16">
           <div className="flex items-center">
             <Link to="/dashboard" className="flex items-center space-x-2">
-              <span className="text-2xl">⛪</span>
+              <span className="text-2xl">\u26EA</span>
               <span className="font-bold text-lg text-primary-700 hidden sm:block">
                 VolunteerHub
               </span>
@@ -93,7 +94,6 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile menu */}
       {mobileOpen && currentUser && (
         <div className="md:hidden border-t border-gray-200 bg-white">
           <div className="px-4 py-3 space-y-1">
