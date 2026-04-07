@@ -3,11 +3,16 @@ import { useAuth } from '../contexts/AuthContext'
 import {
   getAllUsers, getEvents, getMinistries, getServiceHoursSummary,
   createEvent, createMinistry, updateEvent, deleteEvent,
-  updateMinistry, deleteMinistry, updateUserRole, getEventSignups, checkIn, checkOut,
+  updateMinistry, deleteMinistry, updateUserRole, getEventSignups,
+  checkIn, checkOut, adminAddVolunteer, releaseVolunteer, markNoShow,
 } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import StatCard from '../components/StatCard'
-import { Users, Calendar, Clock, Award, Plus, Trash2, Edit3, ChevronDown, ChevronUp, UserCheck, UserX, BarChart3 } from 'lucide-react'
+import {
+  Users, Calendar, Clock, Award, Plus, Trash2, Edit3,
+  ChevronDown, ChevronUp, UserCheck, UserX, BarChart3,
+  Search, MinusCircle, XCircle, UserPlus,
+} from 'lucide-react'
 import { Timestamp } from 'firebase/firestore'
 
 export default function AdminDashboard() {
@@ -25,6 +30,10 @@ export default function AdminDashboard() {
   const [checkInEventId, setCheckInEventId] = useState(null)
   const [eventSignups, setEventSignups] = useState([])
   const [checkInLoading, setCheckInLoading] = useState(null)
+  const [manualHoursMap, setManualHoursMap] = useState({})
+  const [showAddVolunteer, setShowAddVolunteer] = useState(false)
+  const [volunteerSearch, setVolunteerSearch] = useState('')
+  const [bulkLoading, setBulkLoading] = useState(false)
 
   useEffect(() => { loadData() }, [])
 
@@ -67,10 +76,50 @@ export default function AdminDashboard() {
   async function handleDeleteMinistry(id) { if (!confirm('Delete this ministry?')) return; await deleteMinistry(id); await loadData() }
   async function handleRoleChange(userId, newRole) { await updateUserRole(userId, newRole); await loadData() }
 
-  async function openCheckIn(eventId) { setCheckInEventId(eventId); const signups = await getEventSignups(eventId); setEventSignups(signups) }
-  async function handleCheckIn(signupId) { setCheckInLoading(signupId); await checkIn(signupId); const signups = await getEventSignups(checkInEventId); setEventSignups(signups); setCheckInLoading(null) }
-  async function handleCheckOut(signupId, userId) { setCheckInLoading(signupId); await checkOut(signupId, userId); const signups = await getEventSignups(checkInEventId); setEventSignups(signups); setCheckInLoading(null); await loadData() }
+  async function openCheckIn(eventId) {
+    setCheckInEventId(eventId); setManualHoursMap({}); setShowAddVolunteer(false); setVolunteerSearch('')
+    const signups = await getEventSignups(eventId); setEventSignups(signups)
+  }
 
+  async function refreshSignups() { const signups = await getEventSignups(checkInEventId); setEventSignups(signups) }
+
+  async function handleCheckIn(signupId) { setCheckInLoading(signupId); await checkIn(signupId); await refreshSignups(); setCheckInLoading(null) }
+
+  async function handleCheckOut(signupId, userId) {
+    setCheckInLoading(signupId)
+    const manual = manualHoursMap[signupId]
+    const hours = manual !== undefined && manual !== '' ? Number(manual) : null
+    await checkOut(signupId, userId, hours)
+    setManualHoursMap((prev) => { const n = { ...prev }; delete n[signupId]; return n })
+    await refreshSignups(); setCheckInLoading(null); await loadData()
+  }
+
+  async function handleRelease(signupId) { setCheckInLoading(signupId); await releaseVolunteer(signupId); await refreshSignups(); setCheckInLoading(null) }
+  async function handleNoShow(signupId) { setCheckInLoading(signupId); await markNoShow(signupId); await refreshSignups(); setCheckInLoading(null) }
+
+  async function handleBulkCheckIn() {
+    setBulkLoading(true)
+    for (const s of eventSignups.filter((s) => s.status === 'signed_up')) { await checkIn(s.id) }
+    await refreshSignups(); setBulkLoading(false)
+  }
+
+  async function handleBulkCheckOut() {
+    if (!confirm('Check out all checked-in volunteers?')) return
+    setBulkLoading(true)
+    for (const s of eventSignups.filter((s) => s.status === 'checked_in')) {
+      const manual = manualHoursMap[s.id]
+      const hours = manual !== undefined && manual !== '' ? Number(manual) : null
+      await checkOut(s.id, s.userId, hours)
+    }
+    setManualHoursMap({}); await refreshSignups(); setBulkLoading(false); await loadData()
+  }
+
+  async function handleAddWalkIn(userId, displayName) {
+    try { await adminAddVolunteer(checkInEventId, userId, displayName); setVolunteerSearch(''); setShowAddVolunteer(false); await refreshSignups(); await loadData() }
+    catch (err) { alert(err.message) }
+  }
+
+  function setManualHours(signupId, value) { setManualHoursMap((prev) => ({ ...prev, [signupId]: value })) }
   function getMinistryName(id) { return ministries.find((m) => m.id === id)?.name || 'General' }
 
   const tabs = [
@@ -212,28 +261,96 @@ export default function AdminDashboard() {
       {tab === 'checkin' && (
         <div className="space-y-4">
           <h2 className="font-semibold text-lg">Event Check-In</h2>
-          <p className="text-sm text-gray-500">Select an event to manage check-ins</p>
-          <div className="grid gap-3 md:grid-cols-2">
-            {events.filter((e) => { const d = e.date?.toDate(); const now = new Date(); return d && d >= new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000) }).map((event) => (
-              <button key={event.id} onClick={() => openCheckIn(event.id)} className={`card text-left hover:shadow-md transition-shadow ${checkInEventId === event.id ? 'ring-2 ring-primary-500' : ''}`}>
-                <h3 className="font-semibold">{event.title}</h3>
-                <p className="text-sm text-gray-500">{event.date?.toDate().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
-                <p className="text-xs text-gray-400 mt-1">{event.signupCount || 0} signups</p>
-              </button>
-            ))}
+          <p className="text-sm text-gray-500">Select an event to manage volunteer attendance</p>
+
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {events.filter((e) => { const d = e.date?.toDate(); const now = new Date(); return d && d >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) }).sort((a, b) => b.date.toDate() - a.date.toDate()).map((event) => {
+              const isPast = event.date?.toDate() < new Date()
+              return (
+                <button key={event.id} onClick={() => openCheckIn(event.id)} className={`card text-left hover:shadow-md transition-shadow ${checkInEventId === event.id ? 'ring-2 ring-primary-500' : ''} ${isPast ? 'opacity-75' : ''}`}>
+                  <h3 className="font-semibold">{event.title}</h3>
+                  <p className="text-sm text-gray-500">{event.date?.toDate().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                  <p className="text-xs text-gray-400 mt-1">{event.signupCount || 0} signups</p>
+                </button>
+              )
+            })}
           </div>
+
           {checkInEventId && (
             <div className="card">
-              <h3 className="font-semibold text-lg mb-4">Signups</h3>
-              {eventSignups.length === 0 ? (<p className="text-gray-400 text-sm text-center py-4">No signups for this event</p>) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <div>
+                  <h3 className="font-semibold text-lg">Attendance</h3>
+                  <p className="text-xs text-gray-400">
+                    {eventSignups.filter((s) => s.status === 'checked_in').length} checked in
+                    {' \u00B7 '}{eventSignups.filter((s) => s.status === 'checked_out').length} checked out
+                    {' \u00B7 '}{eventSignups.filter((s) => s.status === 'signed_up').length} pending
+                    {eventSignups.filter((s) => s.status === 'released').length > 0 && ` \u00B7 ${eventSignups.filter((s) => s.status === 'released').length} released`}
+                    {eventSignups.filter((s) => s.status === 'no_show').length > 0 && ` \u00B7 ${eventSignups.filter((s) => s.status === 'no_show').length} no-show`}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => setShowAddVolunteer(!showAddVolunteer)} className="btn-secondary text-xs py-1.5 px-3 flex items-center space-x-1"><UserPlus size={12} /><span>Add Walk-In</span></button>
+                  {eventSignups.some((s) => s.status === 'signed_up') && (
+                    <button onClick={handleBulkCheckIn} disabled={bulkLoading} className="btn-primary text-xs py-1.5 px-3 flex items-center space-x-1"><UserCheck size={12} /><span>{bulkLoading ? '...' : 'Check All In'}</span></button>
+                  )}
+                  {eventSignups.some((s) => s.status === 'checked_in') && (
+                    <button onClick={handleBulkCheckOut} disabled={bulkLoading} className="btn-secondary text-xs py-1.5 px-3 flex items-center space-x-1"><UserX size={12} /><span>{bulkLoading ? '...' : 'Check All Out'}</span></button>
+                  )}
+                </div>
+              </div>
+
+              {showAddVolunteer && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm font-medium text-blue-800 mb-2">Add a walk-in volunteer</p>
+                  <div className="relative">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input type="text" className="input pl-9 text-sm" placeholder="Search by name..." value={volunteerSearch} onChange={(e) => setVolunteerSearch(e.target.value)} />
+                  </div>
+                  {volunteerSearch.length >= 2 && (
+                    <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
+                      {users.filter((u) => (u.displayName || '').toLowerCase().includes(volunteerSearch.toLowerCase()) && !eventSignups.some((s) => s.userId === u.id)).slice(0, 8).map((u) => (
+                        <button key={u.id} onClick={() => handleAddWalkIn(u.id, u.displayName)} className="w-full flex items-center justify-between p-2 bg-white rounded hover:bg-gray-50 text-sm">
+                          <span>{u.displayName || u.email}</span>
+                          <span className="text-primary-600 text-xs font-medium">+ Add & Check In</span>
+                        </button>
+                      ))}
+                      {users.filter((u) => (u.displayName || '').toLowerCase().includes(volunteerSearch.toLowerCase()) && !eventSignups.some((s) => s.userId === u.id)).length === 0 && (
+                        <p className="text-xs text-gray-400 py-2 text-center">No matching volunteers found</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {eventSignups.length === 0 ? (
+                <p className="text-gray-400 text-sm text-center py-4">No signups for this event</p>
+              ) : (
                 <div className="space-y-2">
-                  {eventSignups.map((signup) => (
-                    <div key={signup.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div><p className="font-medium text-sm">{signup.userName}</p><p className="text-xs text-gray-400 capitalize">{signup.status.replace('_', ' ')}</p></div>
-                      <div className="flex space-x-2">
-                        {signup.status === 'signed_up' && (<button onClick={() => handleCheckIn(signup.id)} disabled={checkInLoading === signup.id} className="btn-primary text-xs py-1 px-3 flex items-center space-x-1"><UserCheck size={12} /><span>{checkInLoading === signup.id ? '...' : 'Check In'}</span></button>)}
-                        {signup.status === 'checked_in' && (<button onClick={() => handleCheckOut(signup.id, signup.userId)} disabled={checkInLoading === signup.id} className="btn-secondary text-xs py-1 px-3 flex items-center space-x-1"><UserX size={12} /><span>{checkInLoading === signup.id ? '...' : 'Check Out'}</span></button>)}
-                        {signup.status === 'checked_out' && (<span className="text-xs text-green-600 font-medium">{formatHours(signup.hoursLogged)} logged</span>)}
+                  {eventSignups.sort((a, b) => { const order = { checked_in: 0, signed_up: 1, checked_out: 2, released: 3, no_show: 4 }; return (order[a.status] || 5) - (order[b.status] || 5) }).map((signup) => (
+                    <div key={signup.id} className={`p-3 rounded-lg ${signup.status === 'checked_in' ? 'bg-green-50 border border-green-200' : signup.status === 'no_show' ? 'bg-red-50 border border-red-100' : signup.status === 'released' ? 'bg-yellow-50 border border-yellow-100' : 'bg-gray-50'}`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-sm">{signup.userName}</p>
+                          <p className="text-xs text-gray-400 capitalize">
+                            {signup.status.replace('_', ' ')}
+                            {signup.status === 'checked_in' && signup.checkedInAt && (<span> since {signup.checkedInAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {signup.status === 'signed_up' && (<>
+                            <button onClick={() => handleCheckIn(signup.id)} disabled={checkInLoading === signup.id} className="btn-primary text-xs py-1 px-3 flex items-center space-x-1"><UserCheck size={12} /><span>{checkInLoading === signup.id ? '...' : 'Check In'}</span></button>
+                            <button onClick={() => handleNoShow(signup.id)} disabled={checkInLoading === signup.id} className="text-gray-400 hover:text-red-500 p-1" title="Mark as no-show"><XCircle size={16} /></button>
+                          </>)}
+                          {signup.status === 'checked_in' && (<>
+                            <input type="number" step="0.25" min="0" className="input py-1 text-xs w-16 text-center" placeholder="hrs" value={manualHoursMap[signup.id] || ''} onChange={(e) => setManualHours(signup.id, e.target.value)} title="Override hours (leave blank for auto-calculate)" />
+                            <button onClick={() => handleCheckOut(signup.id, signup.userId)} disabled={checkInLoading === signup.id} className="btn-primary text-xs py-1 px-3 flex items-center space-x-1"><UserX size={12} /><span>{checkInLoading === signup.id ? '...' : 'Check Out'}</span></button>
+                            <button onClick={() => handleRelease(signup.id)} disabled={checkInLoading === signup.id} className="text-gray-400 hover:text-amber-500 p-1" title="Release (not needed, 0 hours)"><MinusCircle size={16} /></button>
+                          </>)}
+                          {signup.status === 'checked_out' && (<span className="text-xs text-green-600 font-medium">{formatHours(signup.hoursLogged)} logged</span>)}
+                          {signup.status === 'released' && (<span className="text-xs text-amber-600 font-medium">Released</span>)}
+                          {signup.status === 'no_show' && (<span className="text-xs text-red-500 font-medium">No-show</span>)}
+                        </div>
                       </div>
                     </div>
                   ))}
