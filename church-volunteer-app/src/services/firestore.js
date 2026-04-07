@@ -328,6 +328,39 @@ export async function getUserProfile(userId) {
   return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null
 }
 
+// Create a managed volunteer (no Firebase Auth account needed)
+export async function createManagedVolunteer({ displayName, email, phone }) {
+  const ref = await addDoc(collection(db, 'users'), {
+    uid: null, // no auth account
+    email: email || '',
+    displayName: displayName || '',
+    photoURL: '',
+    phone: phone || '',
+    role: 'volunteer',
+    managed: true, // flag: admin-created, no login
+    ministries: [],
+    totalHours: 0,
+    totalPoints: 0,
+    badges: [],
+    streak: 0,
+    lastServedDate: null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  })
+  return ref
+}
+
+export async function updateVolunteerProfile(userId, data) {
+  return updateDoc(doc(db, 'users', userId), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function deleteVolunteer(userId) {
+  return deleteDoc(doc(db, 'users', userId))
+}
+
 // ─── Reports ─────────────────────────────────────────────────
 
 export async function getAttendanceLogs(filters = {}) {
