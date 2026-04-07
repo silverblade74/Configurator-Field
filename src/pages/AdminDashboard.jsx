@@ -5,6 +5,7 @@ import {
   createEvent, createMinistry, updateEvent, deleteEvent,
   updateMinistry, deleteMinistry, updateUserRole, getEventSignups,
   checkIn, checkOut, adminAddVolunteer, releaseVolunteer, markNoShow,
+  createManagedVolunteer, deleteVolunteer,
 } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import StatCard from '../components/StatCard'
@@ -27,6 +28,11 @@ export default function AdminDashboard() {
   const [showMinistryForm, setShowMinistryForm] = useState(false)
   const [eventForm, setEventForm] = useState({ title: '', description: '', date: '', location: '', ministryId: '', maxVolunteers: '', durationHours: '' })
   const [ministryForm, setMinistryForm] = useState({ name: '', description: '', leaderName: '', contactEmail: '' })
+
+  // Add Volunteer (managed, no account)
+  const [showVolunteerForm, setShowVolunteerForm] = useState(false)
+  const [volunteerForm, setVolunteerForm] = useState({ displayName: '', email: '', phone: '' })
+
   const [checkInEventId, setCheckInEventId] = useState(null)
   const [eventSignups, setEventSignups] = useState([])
   const [checkInLoading, setCheckInLoading] = useState(null)
@@ -82,7 +88,6 @@ export default function AdminDashboard() {
   }
 
   async function refreshSignups() { const signups = await getEventSignups(checkInEventId); setEventSignups(signups) }
-
   async function handleCheckIn(signupId) { setCheckInLoading(signupId); await checkIn(signupId); await refreshSignups(); setCheckInLoading(null) }
 
   async function handleCheckOut(signupId, userId) {
@@ -239,17 +244,35 @@ export default function AdminDashboard() {
 
       {tab === 'users' && (
         <div className="space-y-4">
-          <h2 className="font-semibold text-lg">Manage Users ({users.length})</h2>
+          <div className="flex justify-between items-center">
+            <h2 className="font-semibold text-lg">Manage Users ({users.length})</h2>
+            <button onClick={() => setShowVolunteerForm(!showVolunteerForm)} className="btn-primary flex items-center space-x-1"><UserPlus size={16} /><span>Add Volunteer</span></button>
+          </div>
+
+          {showVolunteerForm && (
+            <form onSubmit={async (e) => { e.preventDefault(); if (!volunteerForm.displayName.trim()) return alert('Name is required'); try { await createManagedVolunteer(volunteerForm); setVolunteerForm({ displayName: '', email: '', phone: '' }); setShowVolunteerForm(false); await loadData() } catch (err) { alert('Failed to create volunteer') } }} className="card space-y-4">
+              <h3 className="font-semibold">Add Volunteer (no account needed)</h3>
+              <p className="text-xs text-gray-500">Create a profile for someone who doesn't have or want their own login. They can still be checked in/out and have hours tracked.</p>
+              <div className="grid sm:grid-cols-3 gap-4">
+                <div><label className="label">Name *</label><input className="input" required value={volunteerForm.displayName} onChange={(e) => setVolunteerForm({ ...volunteerForm, displayName: e.target.value })} placeholder="John Doe" /></div>
+                <div><label className="label">Email (optional)</label><input type="email" className="input" value={volunteerForm.email} onChange={(e) => setVolunteerForm({ ...volunteerForm, email: e.target.value })} placeholder="john@email.com" /></div>
+                <div><label className="label">Phone (optional)</label><input type="tel" className="input" value={volunteerForm.phone} onChange={(e) => setVolunteerForm({ ...volunteerForm, phone: e.target.value })} placeholder="(555) 123-4567" /></div>
+              </div>
+              <div className="flex space-x-2"><button type="submit" className="btn-primary">Add Volunteer</button><button type="button" onClick={() => setShowVolunteerForm(false)} className="btn-secondary">Cancel</button></div>
+            </form>
+          )}
+
           <div className="card p-0 overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3 hidden sm:table-cell">Email</th><th className="text-right px-4 py-3">Hours</th><th className="text-left px-4 py-3">Role</th></tr></thead>
+              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3 hidden sm:table-cell">Email</th><th className="text-right px-4 py-3">Hours</th><th className="text-left px-4 py-3">Role</th><th className="text-right px-4 py-3 w-16"></th></tr></thead>
               <tbody className="divide-y">
                 {users.map((u) => (
                   <tr key={u.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">{u.displayName || 'Unknown'}</td>
-                    <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{u.email}</td>
+                    <td className="px-4 py-3"><div><span className="font-medium">{u.displayName || 'Unknown'}</span>{u.managed && <span className="ml-2 badge bg-gray-100 text-gray-500">No account</span>}</div></td>
+                    <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{u.email || '-'}</td>
                     <td className="px-4 py-3 text-right">{formatHours(u.totalHours || 0)}</td>
                     <td className="px-4 py-3"><select className="input py-1 text-xs w-auto" value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}><option value="volunteer">Volunteer</option><option value="ministry_leader">Ministry Leader</option><option value="admin">Admin</option></select></td>
+                    <td className="px-4 py-3 text-right">{u.managed && (<button onClick={async () => { if (!confirm(`Delete ${u.displayName}? This cannot be undone.`)) return; await deleteVolunteer(u.id); await loadData() }} className="text-gray-400 hover:text-red-500 p-1" title="Delete volunteer"><Trash2 size={14} /></button>)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -311,7 +334,7 @@ export default function AdminDashboard() {
                     <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
                       {users.filter((u) => (u.displayName || '').toLowerCase().includes(volunteerSearch.toLowerCase()) && !eventSignups.some((s) => s.userId === u.id)).slice(0, 8).map((u) => (
                         <button key={u.id} onClick={() => handleAddWalkIn(u.id, u.displayName)} className="w-full flex items-center justify-between p-2 bg-white rounded hover:bg-gray-50 text-sm">
-                          <span>{u.displayName || u.email}</span>
+                          <span>{u.displayName || u.email}{u.managed && <span className="ml-1 text-xs text-gray-400">(no account)</span>}</span>
                           <span className="text-primary-600 text-xs font-medium">+ Add & Check In</span>
                         </button>
                       ))}
