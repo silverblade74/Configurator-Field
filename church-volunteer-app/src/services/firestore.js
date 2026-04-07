@@ -244,6 +244,11 @@ export async function markNoShow(signupId) {
   })
 }
 
+// Assign a volunteer to a department for this specific event
+export async function assignDepartment(signupId, department) {
+  return updateDoc(doc(db, 'eventSignups', signupId), { department: department || null })
+}
+
 // ─── Leaderboard ─────────────────────────────────────────────
 
 export async function getLeaderboard(limitCount = 20) {

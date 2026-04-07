@@ -20,8 +20,10 @@ import {
   markNoShow,
   createManagedVolunteer,
   deleteVolunteer,
+  assignDepartment,
 } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
+import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
 import {
   Users, Calendar, Clock, Award, Plus, Trash2, Edit3,
@@ -739,15 +741,38 @@ export default function AdminDashboard() {
                       signup.status === 'released' ? 'bg-yellow-50 border border-yellow-100' :
                       'bg-gray-50'
                     }`}>
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-sm">{signup.userName}</p>
-                          <p className="text-xs text-gray-400 capitalize">
-                            {signup.status.replace('_', ' ')}
-                            {signup.status === 'checked_in' && signup.checkedInAt && (
-                              <span> since {signup.checkedInAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
-                            )}
-                          </p>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm">{signup.userName}</p>
+                            <p className="text-xs text-gray-400 capitalize">
+                              {signup.status.replace('_', ' ')}
+                              {signup.status === 'checked_in' && signup.checkedInAt && (
+                                <span> since {signup.checkedInAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+                              )}
+                            </p>
+                          </div>
+                          {/* Department assignment */}
+                          {(signup.status === 'signed_up' || signup.status === 'checked_in') && (
+                            <select
+                              className="input py-1 text-xs w-auto"
+                              value={signup.department || ''}
+                              onChange={async (e) => {
+                                await assignDepartment(signup.id, e.target.value)
+                                await refreshSignups()
+                              }}
+                            >
+                              <option value="">Assign dept...</option>
+                              {DEPARTMENTS.map((d) => (
+                                <option key={d.id} value={d.id}>{d.icon} {d.name}</option>
+                              ))}
+                            </select>
+                          )}
+                          {(signup.status === 'checked_out' || signup.status === 'released') && signup.department && (
+                            <span className="badge bg-primary-100 text-primary-700 text-xs">
+                              {DEPARTMENTS.find((d) => d.id === signup.department)?.icon} {DEPARTMENTS.find((d) => d.id === signup.department)?.name}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
                           {/* Signed up: Check In, No-Show */}
