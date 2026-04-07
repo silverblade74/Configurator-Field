@@ -66,10 +66,19 @@ export default function LeaderDashboard() {
     })
   }
 
-  const departmentData = getDepartmentData()
-  const totalVolunteers = users.filter((u) => u.role === 'volunteer').length
+  const isLeaderOnly = userProfile?.role === 'ministry_leader'
+  const leaderDept = userProfile?.assignedDepartment || null
+
+  const allDepartmentData = getDepartmentData()
+  const departmentData = isLeaderOnly && leaderDept
+    ? allDepartmentData.filter((d) => d.id === leaderDept)
+    : allDepartmentData
+
+  const totalVolunteers = isLeaderOnly
+    ? departmentData.reduce((sum, d) => sum + d.volunteers.length, 0)
+    : users.filter((u) => u.role === 'volunteer').length
   const assignedVolunteers = new Set(departmentData.flatMap((d) => d.volunteers.map((v) => v.id))).size
-  const unassignedCount = totalVolunteers - assignedVolunteers
+  const unassignedCount = isLeaderOnly ? 0 : (users.filter((u) => u.role === 'volunteer').length - new Set(allDepartmentData.flatMap((d) => d.volunteers.map((v) => v.id))).size)
   const totalDeptHours = departmentData.reduce((sum, d) => sum + d.totalHours, 0)
 
   const filteredDepartments = departmentData.filter((dept) => {
@@ -95,15 +104,28 @@ export default function LeaderDashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Leader Dashboard</h1>
-        <p className="text-gray-500 text-sm mt-1">Serve Coordinators & Ministry Leaders \u2014 volunteer assignments by department</p>
+        <h1 className="text-2xl font-bold">
+          {isLeaderOnly && leaderDept
+            ? `${DEPARTMENTS.find((d) => d.id === leaderDept)?.icon || ''} ${DEPARTMENTS.find((d) => d.id === leaderDept)?.name || 'My'} Department`
+            : 'Leader Dashboard'}
+        </h1>
+        <p className="text-gray-500 text-sm mt-1">
+          {isLeaderOnly && leaderDept
+            ? 'Your assigned volunteers and department activity'
+            : 'Serve Coordinators & Ministry Leaders \u2014 volunteer assignments by department'}
+        </p>
+        {isLeaderOnly && !leaderDept && (
+          <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+            You haven't been assigned to a department yet. Ask an admin to assign you in Admin \u2192 Users.
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard title="Total Volunteers" value={totalVolunteers} icon={Users} color="primary" />
         <StatCard title="Assigned" value={assignedVolunteers} subtitle={`${unassignedCount} unassigned`} icon={UserCheck} color="green" />
         <StatCard title="Total Dept Hours" value={formatHours(totalDeptHours)} icon={Clock} color="orange" />
-        <StatCard title="Departments" value={DEPARTMENTS.length} icon={TrendingUp} color="purple" />
+        <StatCard title="Departments" value={departmentData.length} icon={TrendingUp} color="purple" />
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
@@ -111,10 +133,12 @@ export default function LeaderDashboard() {
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input type="text" className="input pl-9" placeholder="Search volunteers by name or email..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
-        <select className="input w-auto" value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
-          <option value="all">All Departments</option>
-          {DEPARTMENTS.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
-        </select>
+        {!isLeaderOnly && (
+          <select className="input w-auto" value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
+            <option value="all">All Departments</option>
+            {DEPARTMENTS.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
+          </select>
+        )}
       </div>
 
       {searchQuery.length >= 2 && (
@@ -144,19 +168,19 @@ export default function LeaderDashboard() {
         </div>
       )}
 
-      {unassignedCount > 0 && selectedDept === 'all' && !searchQuery && (
+      {unassignedCount > 0 && selectedDept === 'all' && !searchQuery && !isLeaderOnly && (
         <div className="flex items-start space-x-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
           <AlertCircle size={20} className="text-amber-600 mt-0.5 shrink-0" />
           <div>
             <p className="font-medium text-amber-800 text-sm">{unassignedCount} volunteer{unassignedCount !== 1 ? 's' : ''} not assigned to a department</p>
-            <p className="text-xs text-amber-600 mt-0.5">Assign them via Admin &rarr; Users, or add ministry IDs to their profile.</p>
+            <p className="text-xs text-amber-600 mt-0.5">Assign them via Admin \u2192 Users, or add ministry IDs to their profile.</p>
           </div>
         </div>
       )}
 
       <div className="space-y-3">
         {filteredDepartments.map((dept) => {
-          const isExpanded = expandedDept === dept.id
+          const isExpanded = expandedDept === dept.id || (isLeaderOnly && departmentData.length === 1)
           return (
             <div key={dept.id} className="card p-0 overflow-hidden">
               <button onClick={() => setExpandedDept(isExpanded ? null : dept.id)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
@@ -231,7 +255,7 @@ export default function LeaderDashboard() {
 
       {selectedDept === 'all' && !searchQuery && (
         <div className="card">
-          <h2 className="font-semibold text-lg mb-4">Upcoming Events by Department</h2>
+          <h2 className="font-semibold text-lg mb-4">Upcoming Events{isLeaderOnly && leaderDept ? '' : ' by Department'}</h2>
           {events.filter((e) => e.date?.toDate() > new Date()).length === 0 ? (
             <p className="text-gray-400 text-sm text-center py-4">No upcoming events</p>
           ) : (
@@ -240,6 +264,7 @@ export default function LeaderDashboard() {
                 const ministry = ministries.find((m) => m.id === event.ministryId)
                 const dept = ministry ? DEPARTMENTS.find((d) => d.name.toLowerCase().trim() === ministry.name.toLowerCase().trim()) : null
                 const signups = eventSignupsMap[event.id] || []
+                if (isLeaderOnly && leaderDept && dept?.id !== leaderDept) return null
                 return (
                   <div key={event.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <div className="flex items-center space-x-3">
