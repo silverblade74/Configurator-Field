@@ -4,8 +4,9 @@ import {
   getAllUsers, getEvents, getMinistries, getServiceHoursSummary,
   createEvent, createMinistry, updateEvent, deleteEvent,
   updateMinistry, deleteMinistry, updateUserRole, getEventSignups,
+  signUpForEvent, cancelSignup,
   checkIn, checkOut, adminAddVolunteer, releaseVolunteer, markNoShow,
-  createManagedVolunteer, deleteVolunteer, assignDepartment,
+  createManagedVolunteer, deleteVolunteer, assignDepartment, updateVolunteerProfile,
 } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
@@ -32,6 +33,10 @@ export default function AdminDashboard() {
 
   const [showVolunteerForm, setShowVolunteerForm] = useState(false)
   const [volunteerForm, setVolunteerForm] = useState({ displayName: '', email: '', phone: '' })
+
+  const [assignEventId, setAssignEventId] = useState(null)
+  const [assignSearch, setAssignSearch] = useState('')
+  const [assignSignups, setAssignSignups] = useState([])
 
   const [checkInEventId, setCheckInEventId] = useState(null)
   const [eventSignups, setEventSignups] = useState([])
@@ -128,6 +133,30 @@ export default function AdminDashboard() {
   function getMinistryName(id) { return ministries.find((m) => m.id === id)?.name || 'General' }
   function getDeptInfo(id) { return DEPARTMENTS.find((d) => d.id === id) }
 
+  async function openAssignEvent(eventId) {
+    if (assignEventId === eventId) { setAssignEventId(null); return }
+    setAssignEventId(eventId)
+    setAssignSearch('')
+    const signups = await getEventSignups(eventId)
+    setAssignSignups(signups)
+  }
+
+  async function handleAssignVolunteer(eventId, userId, displayName) {
+    try {
+      await signUpForEvent(eventId, userId, displayName)
+      const signups = await getEventSignups(eventId)
+      setAssignSignups(signups)
+      await loadData()
+    } catch (err) { alert(err.message) }
+  }
+
+  async function handleRemoveFromEvent(signupId, eventId) {
+    await cancelSignup(signupId, eventId)
+    const signups = await getEventSignups(eventId)
+    setAssignSignups(signups)
+    await loadData()
+  }
+
   const tabs = [
     { id: 'overview', label: 'Overview', icon: BarChart3 },
     { id: 'events', label: 'Events', icon: Calendar },
@@ -195,21 +224,72 @@ export default function AdminDashboard() {
               <div className="flex space-x-2"><button type="submit" className="btn-primary">Create Event</button><button type="button" onClick={() => setShowEventForm(false)} className="btn-secondary">Cancel</button></div>
             </form>
           )}
-          <div className="card p-0 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3">Event</th><th className="text-left px-4 py-3 hidden sm:table-cell">Date</th><th className="text-left px-4 py-3 hidden md:table-cell">Ministry</th><th className="text-right px-4 py-3">Signups</th><th className="text-right px-4 py-3">Actions</th></tr></thead>
-              <tbody className="divide-y">
-                {events.map((event) => (
-                  <tr key={event.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium">{event.title}</td>
-                    <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{event.date?.toDate().toLocaleDateString()}</td>
-                    <td className="px-4 py-3 text-gray-500 hidden md:table-cell">{getMinistryName(event.ministryId)}</td>
-                    <td className="px-4 py-3 text-right">{event.signupCount || 0}</td>
-                    <td className="px-4 py-3 text-right"><button onClick={() => handleDeleteEvent(event.id)} className="text-red-500 hover:text-red-700 p-1"><Trash2 size={14} /></button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          <div className="space-y-3">
+            {events.map((event) => (
+              <div key={event.id} className="card p-0 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <p className="font-medium">{event.title}</p>
+                    <p className="text-xs text-gray-500">
+                      {event.date?.toDate().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      {event.ministryId && ` \u00B7 ${getMinistryName(event.ministryId)}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">{event.signupCount || 0} volunteers</span>
+                    <button onClick={() => openAssignEvent(event.id)} className={`btn-secondary text-xs py-1 px-3 flex items-center space-x-1 ${assignEventId === event.id ? 'ring-2 ring-primary-400' : ''}`}>
+                      <UserPlus size={12} /><span>Assign</span>
+                    </button>
+                    <button onClick={() => { setTab('checkin'); openCheckIn(event.id) }} className="btn-primary text-xs py-1 px-3">Check-In</button>
+                    <button onClick={() => handleDeleteEvent(event.id)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>
+                  </div>
+                </div>
+
+                {assignEventId === event.id && (
+                  <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="relative flex-1">
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input type="text" className="input pl-9 text-sm" placeholder="Search volunteers to add..." value={assignSearch} onChange={(e) => setAssignSearch(e.target.value)} />
+                      </div>
+                    </div>
+                    {assignSearch.length >= 2 && (
+                      <div className="mb-3 max-h-40 overflow-y-auto space-y-1">
+                        {users.filter((u) => (u.displayName || '').toLowerCase().includes(assignSearch.toLowerCase()) && !assignSignups.some((s) => s.userId === u.id)).slice(0, 8).map((u) => (
+                          <button key={u.id} onClick={() => { handleAssignVolunteer(event.id, u.id, u.displayName); setAssignSearch('') }} className="w-full flex items-center justify-between p-2 bg-white rounded hover:bg-blue-50 text-sm">
+                            <span>{u.displayName || u.email}{u.managed && <span className="ml-1 text-xs text-gray-400">(no account)</span>}</span>
+                            <span className="text-primary-600 text-xs font-medium">+ Add to Event</span>
+                          </button>
+                        ))}
+                        {users.filter((u) => (u.displayName || '').toLowerCase().includes(assignSearch.toLowerCase()) && !assignSignups.some((s) => s.userId === u.id)).length === 0 && (
+                          <p className="text-xs text-gray-400 py-2 text-center">No matching volunteers</p>
+                        )}
+                      </div>
+                    )}
+                    {assignSignups.length > 0 && (
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 mb-2">Assigned volunteers ({assignSignups.length})</p>
+                        <div className="space-y-1">
+                          {assignSignups.map((s) => (
+                            <div key={s.id} className="flex items-center justify-between p-2 bg-white rounded text-sm">
+                              <div className="flex items-center gap-2">
+                                <span>{s.userName}</span>
+                                {s.department && <span className="badge bg-primary-100 text-primary-700 text-xs">{getDeptInfo(s.department)?.icon} {getDeptInfo(s.department)?.name}</span>}
+                                <span className={`badge text-xs ${s.status === 'checked_in' ? 'bg-green-100 text-green-700' : s.status === 'checked_out' ? 'bg-gray-100 text-gray-600' : 'bg-blue-100 text-blue-700'}`}>{s.status.replace('_', ' ')}</span>
+                              </div>
+                              {s.status === 'signed_up' && (
+                                <button onClick={() => handleRemoveFromEvent(s.id, event.id)} className="text-gray-400 hover:text-red-500 p-1" title="Remove from event"><XCircle size={14} /></button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -253,7 +333,7 @@ export default function AdminDashboard() {
           {showVolunteerForm && (
             <form onSubmit={async (e) => { e.preventDefault(); if (!volunteerForm.displayName.trim()) return alert('Name is required'); try { await createManagedVolunteer(volunteerForm); setVolunteerForm({ displayName: '', email: '', phone: '' }); setShowVolunteerForm(false); await loadData() } catch (err) { alert('Failed to create volunteer') } }} className="card space-y-4">
               <h3 className="font-semibold">Add Volunteer (no account needed)</h3>
-              <p className="text-xs text-gray-500">Create a profile for someone who doesn't have or want their own login. They can still be checked in/out and have hours tracked.</p>
+              <p className="text-xs text-gray-500">Create a profile for someone who doesn't have or want their own login.</p>
               <div className="grid sm:grid-cols-3 gap-4">
                 <div><label className="label">Name *</label><input className="input" required value={volunteerForm.displayName} onChange={(e) => setVolunteerForm({ ...volunteerForm, displayName: e.target.value })} placeholder="John Doe" /></div>
                 <div><label className="label">Email (optional)</label><input type="email" className="input" value={volunteerForm.email} onChange={(e) => setVolunteerForm({ ...volunteerForm, email: e.target.value })} placeholder="john@email.com" /></div>
@@ -265,7 +345,7 @@ export default function AdminDashboard() {
 
           <div className="card p-0 overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3 hidden sm:table-cell">Email</th><th className="text-right px-4 py-3">Hours</th><th className="text-left px-4 py-3">Role</th><th className="text-right px-4 py-3 w-16"></th></tr></thead>
+              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3 hidden sm:table-cell">Email</th><th className="text-right px-4 py-3">Hours</th><th className="text-left px-4 py-3">Role</th><th className="text-left px-4 py-3 hidden md:table-cell">Department</th><th className="text-right px-4 py-3 w-16"></th></tr></thead>
               <tbody className="divide-y">
                 {users.map((u) => (
                   <tr key={u.id} className="hover:bg-gray-50">
@@ -273,7 +353,15 @@ export default function AdminDashboard() {
                     <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{u.email || '-'}</td>
                     <td className="px-4 py-3 text-right">{formatHours(u.totalHours || 0)}</td>
                     <td className="px-4 py-3"><select className="input py-1 text-xs w-auto" value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}><option value="volunteer">Volunteer</option><option value="ministry_leader">Ministry Leader</option><option value="admin">Admin</option></select></td>
-                    <td className="px-4 py-3 text-right">{u.managed && (<button onClick={async () => { if (!confirm(`Delete ${u.displayName}? This cannot be undone.`)) return; await deleteVolunteer(u.id); await loadData() }} className="text-gray-400 hover:text-red-500 p-1" title="Delete volunteer"><Trash2 size={14} /></button>)}</td>
+                    <td className="px-4 py-3 hidden md:table-cell">
+                      {u.role === 'ministry_leader' ? (
+                        <select className="input py-1 text-xs w-auto" value={u.assignedDepartment || ''} onChange={async (e) => { await updateVolunteerProfile(u.id, { assignedDepartment: e.target.value || null }); await loadData() }}>
+                          <option value="">None</option>
+                          {DEPARTMENTS.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
+                        </select>
+                      ) : (<span className="text-xs text-gray-400">-</span>)}
+                    </td>
+                    <td className="px-4 py-3 text-right">{u.managed && (<button onClick={async () => { if (!confirm(`Delete ${u.displayName}?`)) return; await deleteVolunteer(u.id); await loadData() }} className="text-gray-400 hover:text-red-500 p-1" title="Delete volunteer"><Trash2 size={14} /></button>)}</td>
                   </tr>
                 ))}
               </tbody>
