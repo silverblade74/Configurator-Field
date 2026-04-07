@@ -62,7 +62,7 @@ export async function signUpForEvent(eventId, userId, userName) {
 
   await addDoc(collection(db, 'eventSignups'), {
     eventId, userId, userName, status: 'signed_up',
-    checkedInAt: null, checkedOutAt: null, hoursLogged: 0, createdAt: serverTimestamp(),
+    checkedInAt: null, checkedOutAt: null, hoursLogged: 0, department: null, createdAt: serverTimestamp(),
   })
   await updateDoc(doc(db, 'events', eventId), { signupCount: increment(1) })
 }
@@ -109,7 +109,7 @@ export async function checkOut(signupId, userId, manualHours = null) {
   await addDoc(collection(db, 'attendanceLogs'), {
     userId, signupId, eventId: signupData.eventId,
     checkedInAt: signupData.checkedInAt, checkedOutAt: Timestamp.now(),
-    hoursLogged, createdAt: serverTimestamp(),
+    hoursLogged, department: signupData.department || null, createdAt: serverTimestamp(),
   })
 
   const pointsEarned = Math.floor(hoursLogged * 10)
@@ -119,7 +119,8 @@ export async function checkOut(signupId, userId, manualHours = null) {
   })
 
   await addDoc(collection(db, 'serviceHours'), {
-    userId, eventId: signupData.eventId, hours: hoursLogged, points: pointsEarned, date: serverTimestamp(),
+    userId, eventId: signupData.eventId, hours: hoursLogged, points: pointsEarned,
+    department: signupData.department || null, date: serverTimestamp(),
   })
 
   return { hoursLogged, pointsEarned }
@@ -132,7 +133,8 @@ export async function adminAddVolunteer(eventId, userId, userName) {
 
   const ref = await addDoc(collection(db, 'eventSignups'), {
     eventId, userId, userName, status: 'checked_in',
-    checkedInAt: serverTimestamp(), checkedOutAt: null, hoursLogged: 0, createdAt: serverTimestamp(),
+    checkedInAt: serverTimestamp(), checkedOutAt: null, hoursLogged: 0,
+    department: null, createdAt: serverTimestamp(),
   })
   await updateDoc(doc(db, 'events', eventId), { signupCount: increment(1) })
   return ref
@@ -146,6 +148,11 @@ export async function releaseVolunteer(signupId) {
 
 export async function markNoShow(signupId) {
   return updateDoc(doc(db, 'eventSignups', signupId), { status: 'no_show' })
+}
+
+// Assign a volunteer to a department for this specific event
+export async function assignDepartment(signupId, department) {
+  return updateDoc(doc(db, 'eventSignups', signupId), { department: department || null })
 }
 
 // --- Leaderboard ---
