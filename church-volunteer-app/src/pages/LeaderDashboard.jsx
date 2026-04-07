@@ -87,10 +87,20 @@ export default function LeaderDashboard() {
     })
   }
 
-  const departmentData = getDepartmentData()
-  const totalVolunteers = users.filter((u) => u.role === 'volunteer').length
+  const isLeaderOnly = userProfile?.role === 'ministry_leader'
+  const leaderDept = userProfile?.assignedDepartment || null
+
+  const allDepartmentData = getDepartmentData()
+  // Ministry leaders only see their assigned department
+  const departmentData = isLeaderOnly && leaderDept
+    ? allDepartmentData.filter((d) => d.id === leaderDept)
+    : allDepartmentData
+
+  const totalVolunteers = isLeaderOnly
+    ? departmentData.reduce((sum, d) => sum + d.volunteers.length, 0)
+    : users.filter((u) => u.role === 'volunteer').length
   const assignedVolunteers = new Set(departmentData.flatMap((d) => d.volunteers.map((v) => v.id))).size
-  const unassignedCount = totalVolunteers - assignedVolunteers
+  const unassignedCount = isLeaderOnly ? 0 : (users.filter((u) => u.role === 'volunteer').length - new Set(allDepartmentData.flatMap((d) => d.volunteers.map((v) => v.id))).size)
   const totalDeptHours = departmentData.reduce((sum, d) => sum + d.totalHours, 0)
 
   // Filter departments
@@ -125,10 +135,21 @@ export default function LeaderDashboard() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold">Leader Dashboard</h1>
+        <h1 className="text-2xl font-bold">
+          {isLeaderOnly && leaderDept
+            ? `${DEPARTMENTS.find((d) => d.id === leaderDept)?.icon || ''} ${DEPARTMENTS.find((d) => d.id === leaderDept)?.name || 'My'} Department`
+            : 'Leader Dashboard'}
+        </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Serve Coordinators & Ministry Leaders — volunteer assignments by department
+          {isLeaderOnly && leaderDept
+            ? 'Your assigned volunteers and department activity'
+            : 'Serve Coordinators & Ministry Leaders — volunteer assignments by department'}
         </p>
+        {isLeaderOnly && !leaderDept && (
+          <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+            You haven't been assigned to a department yet. Ask an admin to assign you in Admin &rarr; Users.
+          </div>
+        )}
       </div>
 
       {/* Summary Stats */}
@@ -151,16 +172,18 @@ export default function LeaderDashboard() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <select
-          className="input w-auto"
-          value={selectedDept}
-          onChange={(e) => setSelectedDept(e.target.value)}
-        >
-          <option value="all">All Departments</option>
-          {DEPARTMENTS.map((d) => (
-            <option key={d.id} value={d.id}>{d.name}</option>
-          ))}
-        </select>
+        {!isLeaderOnly && (
+          <select
+            className="input w-auto"
+            value={selectedDept}
+            onChange={(e) => setSelectedDept(e.target.value)}
+          >
+            <option value="all">All Departments</option>
+            {DEPARTMENTS.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Search Results */}

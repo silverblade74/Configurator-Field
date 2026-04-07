@@ -27,6 +27,8 @@ export default function Navbar() {
 
   if (isAdmin || isLeader) {
     navLinks.push({ to: '/leaders', label: 'Leaders', icon: ClipboardList })
+  }
+  if (isAdmin) {
     navLinks.push({ to: '/admin', label: 'Admin', icon: LayoutDashboard })
   }
 

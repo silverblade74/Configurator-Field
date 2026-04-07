@@ -37,7 +37,7 @@ export default function App() {
           </ProtectedRoute>
         } />
         <Route path="/admin" element={
-          <ProtectedRoute requiredRole={['admin', 'ministry_leader']}>
+          <ProtectedRoute requiredRole={['admin']}>
             <AdminDashboard />
           </ProtectedRoute>
         } />
