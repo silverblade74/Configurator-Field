@@ -146,16 +146,21 @@ export async function checkIn(signupId) {
   })
 }
 
-export async function checkOut(signupId, userId) {
+export async function checkOut(signupId, userId, manualHours = null) {
   const signupRef = doc(db, 'eventSignups', signupId)
   const signupSnap = await getDoc(signupRef)
   const signupData = signupSnap.data()
 
-  const checkedInAt = signupData.checkedInAt?.toDate()
-  const now = new Date()
-  const hoursLogged = checkedInAt
-    ? Math.round(((now - checkedInAt) / (1000 * 60 * 60)) * 100) / 100
-    : 0
+  let hoursLogged
+  if (manualHours !== null && manualHours >= 0) {
+    hoursLogged = Number(manualHours)
+  } else {
+    const checkedInAt = signupData.checkedInAt?.toDate()
+    const now = new Date()
+    hoursLogged = checkedInAt
+      ? Math.round(((now - checkedInAt) / (1000 * 60 * 60)) * 100) / 100
+      : 0
+  }
 
   await updateDoc(signupRef, {
     status: 'checked_out',
@@ -193,6 +198,50 @@ export async function checkOut(signupId, userId) {
   })
 
   return { hoursLogged, pointsEarned }
+}
+
+// Admin: add a walk-in volunteer to an event (not pre-signed-up)
+export async function adminAddVolunteer(eventId, userId, userName) {
+  const existing = query(
+    collection(db, 'eventSignups'),
+    where('eventId', '==', eventId),
+    where('userId', '==', userId)
+  )
+  const snapshot = await getDocs(existing)
+  if (!snapshot.empty) throw new Error('Already added')
+
+  const ref = await addDoc(collection(db, 'eventSignups'), {
+    eventId,
+    userId,
+    userName,
+    status: 'checked_in',
+    checkedInAt: serverTimestamp(),
+    checkedOutAt: null,
+    hoursLogged: 0,
+    createdAt: serverTimestamp(),
+  })
+
+  await updateDoc(doc(db, 'events', eventId), {
+    signupCount: increment(1),
+  })
+
+  return ref
+}
+
+// Mark as "released" (early departure, not needed, etc.) with 0 hours
+export async function releaseVolunteer(signupId) {
+  return updateDoc(doc(db, 'eventSignups', signupId), {
+    status: 'released',
+    checkedOutAt: serverTimestamp(),
+    hoursLogged: 0,
+  })
+}
+
+// Mark as no-show
+export async function markNoShow(signupId) {
+  return updateDoc(doc(db, 'eventSignups', signupId), {
+    status: 'no_show',
+  })
 }
 
 // ─── Leaderboard ─────────────────────────────────────────────
