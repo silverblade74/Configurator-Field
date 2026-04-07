@@ -15,11 +15,9 @@ import LeaderDashboard from './pages/LeaderDashboard'
 export default function App() {
   return (
     <Routes>
-      {/* Public routes */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
 
-      {/* Protected routes */}
       <Route element={
         <ProtectedRoute>
           <Layout />
@@ -37,13 +35,12 @@ export default function App() {
           </ProtectedRoute>
         } />
         <Route path="/admin" element={
-          <ProtectedRoute requiredRole={['admin', 'ministry_leader']}>
+          <ProtectedRoute requiredRole={['admin']}>
             <AdminDashboard />
           </ProtectedRoute>
         } />
       </Route>
 
-      {/* Redirect */}
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
