@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { getEvents, getMinistries, signUpForEvent, getUserSignups, cancelSignup } from '../services/firestore'
 import EmptyState from '../components/EmptyState'
+import Notice from '../components/Notice'
 import { Calendar, MapPin, Users, Clock, Check, X } from 'lucide-react'
 
 export default function Events() {
-  const { userProfile } = useAuth()
+  const { userProfile, isApproved } = useAuth()
   const [events, setEvents] = useState([])
   const [ministries, setMinistries] = useState([])
   const [userSignups, setUserSignups] = useState([])
@@ -13,6 +14,7 @@ export default function Events() {
   const [ministryFilter, setMinistryFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
+  const [message, setMessage] = useState(null)
 
   useEffect(() => { loadData() }, [userProfile])
 
@@ -30,10 +32,14 @@ export default function Events() {
 
   async function handleSignUp(eventId) {
     setActionLoading(eventId)
+    setMessage(null)
     try {
       await signUpForEvent(eventId, userProfile.uid, userProfile.displayName)
+      setMessage({ type: 'success', text: 'Signed up.' })
       await loadData()
-    } catch (err) { alert(err.message) }
+    } catch (err) {
+      setMessage({ type: 'error', text: err.message || 'Failed to sign up.' })
+    }
     setActionLoading(null)
   }
 
@@ -41,8 +47,14 @@ export default function Events() {
     const signup = userSignups.find((s) => s.eventId === eventId)
     if (!signup) return
     setActionLoading(eventId)
-    try { await cancelSignup(signup.id, eventId); await loadData() }
-    catch (err) { alert('Failed to cancel signup') }
+    setMessage(null)
+    try {
+      await cancelSignup(signup.id, eventId)
+      setMessage({ type: 'success', text: 'Signup cancelled.' })
+      await loadData()
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Failed to cancel signup.' })
+    }
     setActionLoading(null)
   }
 
@@ -70,6 +82,7 @@ export default function Events() {
 
   return (
     <div className="space-y-6">
+      {message && <Notice type={message.type}>{message.text}</Notice>}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-2xl font-bold">Events</h1>
         <div className="flex flex-wrap gap-2">
@@ -113,7 +126,11 @@ export default function Events() {
 
                 {!isPast && (
                   <div className="mt-4">
-                    {signed ? (
+                    {!isApproved ? (
+                      <button className="btn-secondary w-full" disabled>
+                        Approval required
+                      </button>
+                    ) : signed ? (
                       <button onClick={() => handleCancel(event.id)} disabled={actionLoading === event.id} className="btn-secondary w-full flex items-center justify-center space-x-1">
                         <X size={14} /><span>{actionLoading === event.id ? 'Cancelling...' : 'Cancel Signup'}</span>
                       </button>
