@@ -7,10 +7,14 @@ import {
   signUpForEvent, cancelSignup,
   checkIn, checkOut, adminAddVolunteer, releaseVolunteer, markNoShow,
   createManagedVolunteer, deleteVolunteer, assignDepartment, updateVolunteerProfile,
+  getPendingUsersForReviewer,
+  approveUser,
+  rejectUser,
 } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
+import Notice from '../components/Notice'
 import {
   Users, Calendar, Clock, Award, Plus, Trash2, Edit3,
   ChevronDown, ChevronUp, UserCheck, UserX, BarChart3,
@@ -25,6 +29,9 @@ export default function AdminDashboard() {
   const [events, setEvents] = useState([])
   const [ministries, setMinistries] = useState([])
   const [serviceHours, setServiceHours] = useState([])
+  const [pendingUsers, setPendingUsers] = useState([])
+  const [approvalLoading, setApprovalLoading] = useState(null)
+  const [message, setMessage] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showEventForm, setShowEventForm] = useState(false)
   const [showMinistryForm, setShowMinistryForm] = useState(false)
@@ -49,12 +56,24 @@ export default function AdminDashboard() {
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    try {
-      const [usersData, eventsData, ministriesData, hoursData] = await Promise.all([
-        getAllUsers(), getEvents(), getMinistries(), getServiceHoursSummary(),
-      ])
-      setUsers(usersData); setEvents(eventsData); setMinistries(ministriesData); setServiceHours(hoursData)
-    } catch (err) { console.error('Error loading admin data:', err) }
+    const results = await Promise.allSettled([
+      getAllUsers(),
+      getEvents(),
+      getMinistries(),
+      getServiceHoursSummary(),
+      getPendingUsersForReviewer(userProfile),
+    ])
+    const [usersRes, eventsRes, ministriesRes, hoursRes, pendingRes] = results
+    const pick = (res, fallback, label) => {
+      if (res.status === 'fulfilled') return res.value
+      console.error(`Error loading ${label}:`, res.reason)
+      return fallback
+    }
+    setUsers(pick(usersRes, [], 'users'))
+    setEvents(pick(eventsRes, [], 'events'))
+    setMinistries(pick(ministriesRes, [], 'ministries'))
+    setServiceHours(pick(hoursRes, [], 'service hours'))
+    setPendingUsers(pick(pendingRes, [], 'pending users'))
     setLoading(false)
   }
 
@@ -86,6 +105,47 @@ export default function AdminDashboard() {
 
   async function handleDeleteMinistry(id) { if (!confirm('Delete this ministry?')) return; await deleteMinistry(id); await loadData() }
   async function handleRoleChange(userId, newRole) { await updateUserRole(userId, newRole); await loadData() }
+
+  async function handleApproveUser(userId) {
+    setApprovalLoading(userId)
+    setMessage(null)
+    try {
+      await approveUser(userId, userProfile.uid)
+    } catch (err) {
+      console.error('approveUser failed:', err)
+      setMessage({ type: 'error', text: 'Failed to approve user.' })
+      setApprovalLoading(null)
+      return
+    }
+    setMessage({ type: 'success', text: 'User approved.' })
+    try {
+      await loadData()
+    } catch (err) {
+      // keep the success message
+    }
+    setApprovalLoading(null)
+  }
+
+  async function handleRejectUser(userId) {
+    const note = window.prompt('Optional rejection note') || ''
+    setApprovalLoading(userId)
+    setMessage(null)
+    try {
+      await rejectUser(userId, userProfile.uid, note)
+    } catch (err) {
+      console.error('rejectUser failed:', err)
+      setMessage({ type: 'error', text: 'Failed to reject user.' })
+      setApprovalLoading(null)
+      return
+    }
+    setMessage({ type: 'success', text: 'User rejected.' })
+    try {
+      await loadData()
+    } catch (err) {
+      // keep the success message
+    }
+    setApprovalLoading(null)
+  }
 
   async function openCheckIn(eventId) {
     setCheckInEventId(eventId); setManualHoursMap({}); setShowAddVolunteer(false); setVolunteerSearch('')
@@ -181,6 +241,46 @@ export default function AdminDashboard() {
 
       {tab === 'overview' && (
         <div className="space-y-6">
+          {message && <Notice type={message.type}>{message.text}</Notice>}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-lg">Pending Approvals</h2>
+              <span className="badge bg-blue-100 text-blue-700">{pendingUsers.length} pending</span>
+            </div>
+            {pendingUsers.length === 0 ? (
+              <p className="text-sm text-gray-500">No pending users need review.</p>
+            ) : (
+              <div className="space-y-3">
+                {pendingUsers.map((u) => (
+                  <div key={u.id} className="flex flex-col gap-3 rounded-lg border border-gray-100 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-medium">{u.displayName || u.email}</p>
+                      <p className="text-sm text-gray-500">{u.email}</p>
+                      <p className="text-xs text-gray-400">
+                        Requested ministries: {(u.requestedMinistryIds || []).map(getMinistryName).join(', ') || 'None selected'}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        className="btn-primary text-sm"
+                        disabled={approvalLoading === u.id}
+                        onClick={() => handleApproveUser(u.id)}
+                      >
+                        {approvalLoading === u.id ? 'Approving...' : 'Approve'}
+                      </button>
+                      <button
+                        className="btn-secondary text-sm"
+                        disabled={approvalLoading === u.id}
+                        onClick={() => handleRejectUser(u.id)}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard title="Total Volunteers" value={totalVolunteers} icon={Users} color="primary" />
             <StatCard title="Total Hours" value={formatHours(totalHours)} icon={Clock} color="green" />
