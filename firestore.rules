@@ -7,18 +7,71 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isApproved() {
+      return isAuth()
+        && (
+          currentUser().approvalStatus == 'approved'
+          || (!currentUser().keys().hasAny(['approvalStatus'])
+            && currentUser().role in ['admin', 'ministry_leader'])
+        );
+    }
+
+    function isSelf(userId) {
+      return isAuth() && request.auth.uid == userId;
+    }
+
+    function roleUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
+    }
+
+    function approvalFieldsOnlyChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'approvalNote', 'updatedAt']);
+    }
+
+    function approvalUpdateIsValid() {
+      return request.resource.data.approvalStatus in ['approved', 'rejected']
+        && request.resource.data.approvedBy == request.auth.uid;
+    }
+
+    function requestedMinistryOverlap() {
+      return resource.data.requestedMinistryIds is list
+        && currentUser().ministries is list
+        && currentUser().ministries.hasAny(resource.data.requestedMinistryIds);
+    }
+
     function isAdmin() {
-      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isAuth() && currentUser().role == 'admin';
     }
 
     function isLeaderOrAdmin() {
-      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'ministry_leader'];
+      return isAuth() && currentUser().role in ['admin', 'ministry_leader'];
     }
 
     match /users/{userId} {
       allow read: if isAuth();
-      allow create: if isAuth() && request.auth.uid == userId;
-      allow update: if isAuth() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSelf(userId)
+        && request.resource.data.role == 'volunteer'
+        && request.resource.data.approvalStatus == 'pending';
+      allow create: if isAdmin()
+        && request.resource.data.managed == true
+        && request.resource.data.role == 'volunteer'
+        && request.resource.data.approvalStatus == 'approved';
+      allow update: if isSelf(userId)
+        && roleUnchanged()
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['approvalStatus', 'approvedBy', 'approvedAt', 'approvalNote']);
+      allow update: if isAdmin();
+      allow update: if isLeaderOrAdmin()
+        && !isSelf(userId)
+        && currentUser().role == 'ministry_leader'
+        && approvalFieldsOnlyChanged()
+        && approvalUpdateIsValid()
+        && requestedMinistryOverlap();
       allow delete: if isAdmin();
     }
 
@@ -34,7 +87,7 @@ service cloud.firestore {
 
     match /eventSignups/{signupId} {
       allow read: if isAuth();
-      allow create: if isAuth();
+      allow create: if isApproved();
       allow update: if isAuth() && (
         resource.data.userId == request.auth.uid || isLeaderOrAdmin()
       );
