@@ -1,31 +1,55 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { Church } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
+import { getMinistries } from '../services/firestore'
+import Notice from '../components/Notice'
 
 export default function Register() {
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  const [ministries, setMinistries] = useState([])
+  const [requestedMinistryIds, setRequestedMinistryIds] = useState([])
+  const [ministriesLoading, setMinistriesLoading] = useState(true)
+  const [ministriesError, setMinistriesError] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { register, loginWithGoogle } = useAuth()
   const navigate = useNavigate()
 
+  useEffect(() => {
+    async function load() {
+      try {
+        setMinistriesLoading(true)
+        setMinistries(await getMinistries())
+      } catch (err) {
+        setMinistriesError('We could not load ministries right now.')
+        setMinistries([])
+      } finally {
+        setMinistriesLoading(false)
+      }
+    }
+    load()
+  }, [])
+
+  function toggleMinistry(id) {
+    setRequestedMinistryIds((current) =>
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+    )
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
-    if (password !== confirmPassword) {
-      return setError('Passwords do not match')
-    }
-    if (password.length < 6) {
-      return setError('Password must be at least 6 characters')
-    }
+    if (password !== confirmPassword) return setError('Passwords do not match')
+    if (password.length < 6) return setError('Password must be at least 6 characters')
 
     setError('')
     setLoading(true)
     try {
-      await register(email, password, displayName)
-      navigate('/dashboard')
+      await register(email, password, displayName, requestedMinistryIds)
+      navigate('/pending-approval')
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
         setError('An account with this email already exists')
@@ -40,7 +64,7 @@ export default function Register() {
     setError('')
     try {
       await loginWithGoogle()
-      navigate('/dashboard')
+      navigate('/pending-approval')
     } catch (err) {
       setError('Failed to sign up with Google.')
     }
@@ -50,63 +74,59 @@ export default function Register() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
       <div className="max-w-md w-full">
         <div className="text-center mb-8">
-          <span className="text-5xl">⛪</span>
+          <Church className="mx-auto text-primary-700" size={48} />
           <h1 className="text-2xl font-bold mt-4">Join VolunteerHub</h1>
           <p className="text-gray-500 mt-1">Create your volunteer account</p>
         </div>
 
-        <div className="card">
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
+        <div className="card space-y-4">
+          <Notice type="info" title="Approval required">
+            After creating your account, an admin or ministry leader will review your request before event signup is enabled.
+          </Notice>
+
+          {error && <Notice type="error">{error}</Notice>}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="label">Full Name</label>
-              <input
-                type="text"
-                className="input"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                required
-                placeholder="John Doe"
-              />
+              <input type="text" className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} required placeholder="John Doe" />
             </div>
             <div>
               <label className="label">Email</label>
-              <input
-                type="email"
-                className="input"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                placeholder="your@email.com"
-              />
+              <input type="email" className="input" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="your@email.com" />
             </div>
             <div>
               <label className="label">Password</label>
-              <input
-                type="password"
-                className="input"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                placeholder="At least 6 characters"
-              />
+              <input type="password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="At least 6 characters" />
             </div>
             <div>
               <label className="label">Confirm Password</label>
-              <input
-                type="password"
-                className="input"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                placeholder="Confirm your password"
-              />
+              <input type="password" className="input" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required placeholder="Confirm your password" />
             </div>
+            {ministriesLoading ? (
+              <Notice type="info" title="Loading ministries">You can still create your account while ministries load.</Notice>
+            ) : ministriesError ? (
+              <Notice type="warning" title="Ministries unavailable">{ministriesError} You can still create your account without selecting any ministries.</Notice>
+            ) : ministries.length === 0 ? (
+              <Notice type="info" title="No ministries listed">There are no ministries to select from right now. You can still create your account.</Notice>
+            ) : (
+              <div>
+                <label className="label">Ministries you are interested in (optional)</label>
+                <div className="grid gap-2">
+                  {ministries.map((m) => (
+                    <label key={m.id} className="flex items-start gap-2 rounded-lg border border-gray-200 p-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={requestedMinistryIds.includes(m.id)}
+                        onChange={() => toggleMinistry(m.id)}
+                        className="mt-0.5 h-4 w-4 shrink-0 rounded border-gray-300 text-primary-600"
+                      />
+                      <span className="min-w-0 flex-1 break-words">{m.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
             <button type="submit" className="btn-primary w-full" disabled={loading}>
               {loading ? 'Creating account...' : 'Create Account'}
             </button>
