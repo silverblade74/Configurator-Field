@@ -1,8 +1,8 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
-export default function ProtectedRoute({ children, requiredRole }) {
-  const { currentUser, userProfile, loading } = useAuth()
+export default function ProtectedRoute({ children, requiredRole, requireApproved = false, allowPending = false }) {
+  const { currentUser, userProfile, approvalStatus, loading } = useAuth()
 
   if (loading) {
     return (
@@ -13,14 +13,22 @@ export default function ProtectedRoute({ children, requiredRole }) {
   }
 
   if (!currentUser) {
-    return <Navigate to="/login" />
+    return <Navigate to="/login" replace />
   }
 
   if (requiredRole) {
     const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole]
     if (!roles.includes(userProfile?.role)) {
-      return <Navigate to="/dashboard" />
+      return <Navigate to="/dashboard" replace />
     }
+  }
+
+  if (requireApproved && approvalStatus !== 'approved') {
+    return <Navigate to={approvalStatus === 'rejected' ? '/profile' : '/pending-approval'} replace />
+  }
+
+  if (allowPending && approvalStatus === 'approved') {
+    return <Navigate to="/dashboard" replace />
   }
 
   return children

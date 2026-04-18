@@ -7,10 +7,14 @@ import {
   signUpForEvent, cancelSignup,
   checkIn, checkOut, adminAddVolunteer, releaseVolunteer, markNoShow,
   createManagedVolunteer, deleteVolunteer, assignDepartment, updateVolunteerProfile,
+  getPendingUsersForReviewer,
+  approveUser,
+  rejectUser,
 } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
+import Notice from '../components/Notice'
 import {
   Users, Calendar, Clock, Award, Plus, Trash2, Edit3,
   ChevronDown, ChevronUp, UserCheck, UserX, BarChart3,
@@ -25,6 +29,10 @@ export default function AdminDashboard() {
   const [events, setEvents] = useState([])
   const [ministries, setMinistries] = useState([])
   const [serviceHours, setServiceHours] = useState([])
+  const [pendingUsers, setPendingUsers] = useState([])
+  const [approvalLoading, setApprovalLoading] = useState(null)
+  const [userFilter, setUserFilter] = useState('all')
+  const [message, setMessage] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showEventForm, setShowEventForm] = useState(false)
   const [showMinistryForm, setShowMinistryForm] = useState(false)
@@ -49,12 +57,24 @@ export default function AdminDashboard() {
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    try {
-      const [usersData, eventsData, ministriesData, hoursData] = await Promise.all([
-        getAllUsers(), getEvents(), getMinistries(), getServiceHoursSummary(),
-      ])
-      setUsers(usersData); setEvents(eventsData); setMinistries(ministriesData); setServiceHours(hoursData)
-    } catch (err) { console.error('Error loading admin data:', err) }
+    const results = await Promise.allSettled([
+      getAllUsers(),
+      getEvents(),
+      getMinistries(),
+      getServiceHoursSummary(),
+      getPendingUsersForReviewer(userProfile),
+    ])
+    const [usersRes, eventsRes, ministriesRes, hoursRes, pendingRes] = results
+    const pick = (res, fallback, label) => {
+      if (res.status === 'fulfilled') return res.value
+      console.error(`Error loading ${label}:`, res.reason)
+      return fallback
+    }
+    setUsers(pick(usersRes, [], 'users'))
+    setEvents(pick(eventsRes, [], 'events'))
+    setMinistries(pick(ministriesRes, [], 'ministries'))
+    setServiceHours(pick(hoursRes, [], 'service hours'))
+    setPendingUsers(pick(pendingRes, [], 'pending users'))
     setLoading(false)
   }
 
@@ -86,6 +106,47 @@ export default function AdminDashboard() {
 
   async function handleDeleteMinistry(id) { if (!confirm('Delete this ministry?')) return; await deleteMinistry(id); await loadData() }
   async function handleRoleChange(userId, newRole) { await updateUserRole(userId, newRole); await loadData() }
+
+  async function handleApproveUser(userId) {
+    setApprovalLoading(userId)
+    setMessage(null)
+    try {
+      await approveUser(userId, userProfile.uid)
+    } catch (err) {
+      console.error('approveUser failed:', err)
+      setMessage({ type: 'error', text: 'Failed to approve user.' })
+      setApprovalLoading(null)
+      return
+    }
+    setMessage({ type: 'success', text: 'User approved.' })
+    try {
+      await loadData()
+    } catch (err) {
+      // keep the success message
+    }
+    setApprovalLoading(null)
+  }
+
+  async function handleRejectUser(userId) {
+    const note = window.prompt('Optional rejection note') || ''
+    setApprovalLoading(userId)
+    setMessage(null)
+    try {
+      await rejectUser(userId, userProfile.uid, note)
+    } catch (err) {
+      console.error('rejectUser failed:', err)
+      setMessage({ type: 'error', text: 'Failed to reject user.' })
+      setApprovalLoading(null)
+      return
+    }
+    setMessage({ type: 'success', text: 'User rejected.' })
+    try {
+      await loadData()
+    } catch (err) {
+      // keep the success message
+    }
+    setApprovalLoading(null)
+  }
 
   async function openCheckIn(eventId) {
     setCheckInEventId(eventId); setManualHoursMap({}); setShowAddVolunteer(false); setVolunteerSearch('')
@@ -181,6 +242,46 @@ export default function AdminDashboard() {
 
       {tab === 'overview' && (
         <div className="space-y-6">
+          {message && <Notice type={message.type}>{message.text}</Notice>}
+          <div className="card">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-semibold text-lg">Pending Approvals</h2>
+              <span className="badge bg-blue-100 text-blue-700">{pendingUsers.length} pending</span>
+            </div>
+            {pendingUsers.length === 0 ? (
+              <p className="text-sm text-gray-500">No pending users need review.</p>
+            ) : (
+              <div className="space-y-3">
+                {pendingUsers.map((u) => (
+                  <div key={u.id} className="flex flex-col gap-3 rounded-lg border border-gray-100 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="font-medium">{u.displayName || u.email}</p>
+                      <p className="text-sm text-gray-500">{u.email}</p>
+                      <p className="text-xs text-gray-400">
+                        Requested ministries: {(u.requestedMinistryIds || []).map(getMinistryName).join(', ') || 'None selected'}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        className="btn-primary text-sm"
+                        disabled={approvalLoading === u.id}
+                        onClick={() => handleApproveUser(u.id)}
+                      >
+                        {approvalLoading === u.id ? 'Approving...' : 'Approve'}
+                      </button>
+                      <button
+                        className="btn-secondary text-sm"
+                        disabled={approvalLoading === u.id}
+                        onClick={() => handleRejectUser(u.id)}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard title="Total Volunteers" value={totalVolunteers} icon={Users} color="primary" />
             <StatCard title="Total Hours" value={formatHours(totalHours)} icon={Clock} color="green" />
@@ -323,15 +424,35 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {tab === 'users' && (
+      {tab === 'users' && (() => {
+        const filteredUsers = users.filter((u) => {
+          const status = u.approvalStatus || (u.role === 'admin' || u.role === 'ministry_leader' ? 'approved' : 'pending')
+          if (userFilter === 'pending') return status === 'pending'
+          if (userFilter === 'approved') return status === 'approved'
+          if (userFilter === 'rejected') return status === 'rejected'
+          if (userFilter === 'managed') return u.managed === true
+          return true
+        })
+        return (
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="font-semibold text-lg">Manage Users ({users.length})</h2>
-            <button onClick={() => setShowVolunteerForm(!showVolunteerForm)} className="btn-primary flex items-center space-x-1"><UserPlus size={16} /><span>Add Volunteer</span></button>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <h2 className="font-semibold text-lg">Manage Users ({filteredUsers.length})</h2>
+            <select
+              className="input text-sm"
+              value={userFilter}
+              onChange={(e) => setUserFilter(e.target.value)}
+            >
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="managed">Managed volunteers</option>
+            </select>
+            <button onClick={() => setShowVolunteerForm(!showVolunteerForm)} className="btn-primary flex items-center space-x-1 ml-auto"><UserPlus size={16} /><span>Add Volunteer</span></button>
           </div>
 
           {showVolunteerForm && (
-            <form onSubmit={async (e) => { e.preventDefault(); if (!volunteerForm.displayName.trim()) return alert('Name is required'); try { await createManagedVolunteer(volunteerForm); setVolunteerForm({ displayName: '', email: '', phone: '' }); setShowVolunteerForm(false); await loadData() } catch (err) { alert('Failed to create volunteer') } }} className="card space-y-4">
+            <form onSubmit={async (e) => { e.preventDefault(); if (!volunteerForm.displayName.trim()) return alert('Name is required'); try { await createManagedVolunteer(volunteerForm, userProfile?.uid); setVolunteerForm({ displayName: '', email: '', phone: '' }); setShowVolunteerForm(false); await loadData() } catch (err) { alert('Failed to create volunteer') } }} className="card space-y-4">
               <h3 className="font-semibold">Add Volunteer (no account needed)</h3>
               <p className="text-xs text-gray-500">Create a profile for someone who doesn't have or want their own login.</p>
               <div className="grid sm:grid-cols-3 gap-4">
@@ -345,14 +466,19 @@ export default function AdminDashboard() {
 
           <div className="card p-0 overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3 hidden sm:table-cell">Email</th><th className="text-right px-4 py-3">Hours</th><th className="text-left px-4 py-3">Role</th><th className="text-left px-4 py-3 hidden md:table-cell">Department</th><th className="text-right px-4 py-3 w-16"></th></tr></thead>
+              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3 hidden sm:table-cell">Email</th><th className="text-right px-4 py-3">Hours</th><th className="text-left px-4 py-3">Role</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3 hidden md:table-cell">Department</th><th className="text-right px-4 py-3 w-16"></th></tr></thead>
               <tbody className="divide-y">
-                {users.map((u) => (
+                {filteredUsers.map((u) => (
                   <tr key={u.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3"><div><span className="font-medium">{u.displayName || 'Unknown'}</span>{u.managed && <span className="ml-2 badge bg-gray-100 text-gray-500">No account</span>}</div></td>
                     <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{u.email || '-'}</td>
                     <td className="px-4 py-3 text-right">{formatHours(u.totalHours || 0)}</td>
                     <td className="px-4 py-3"><select className="input py-1 text-xs w-auto" value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}><option value="volunteer">Volunteer</option><option value="ministry_leader">Ministry Leader</option><option value="admin">Admin</option></select></td>
+                    <td className="px-4 py-3">
+                      <span className="badge bg-gray-100 text-gray-700 capitalize">
+                        {u.approvalStatus || (u.role === 'admin' || u.role === 'ministry_leader' ? 'approved' : 'pending')}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 hidden md:table-cell">
                       {u.role === 'ministry_leader' ? (
                         <select className="input py-1 text-xs w-auto" value={u.assignedDepartment || ''} onChange={async (e) => { await updateVolunteerProfile(u.id, { assignedDepartment: e.target.value || null }); await loadData() }}>
@@ -368,7 +494,8 @@ export default function AdminDashboard() {
             </table>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {tab === 'checkin' && (
         <div className="space-y-4">

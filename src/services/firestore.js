@@ -225,7 +225,7 @@ export async function getUserProfile(userId) {
 }
 
 // Create a managed volunteer (no Firebase Auth account needed)
-export async function createManagedVolunteer({ displayName, email, phone }) {
+export async function createManagedVolunteer({ displayName, email, phone, requestedMinistryIds = [] }, adminUid) {
   const ref = await addDoc(collection(db, 'users'), {
     uid: null,
     email: email || '',
@@ -235,11 +235,16 @@ export async function createManagedVolunteer({ displayName, email, phone }) {
     role: 'volunteer',
     managed: true,
     ministries: [],
+    requestedMinistryIds,
     totalHours: 0,
     totalPoints: 0,
     badges: [],
     streak: 0,
     lastServedDate: null,
+    approvalStatus: 'approved',
+    approvedBy: adminUid || null,
+    approvedAt: serverTimestamp(),
+    approvalNote: '',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })
@@ -268,4 +273,46 @@ export async function getAttendanceLogs(filters = {}) {
 export async function getServiceHoursSummary() {
   const snapshot = await getDocs(collection(db, 'serviceHours'))
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+export async function getPendingUsersForReviewer(reviewerProfile) {
+  const q = query(
+    collection(db, 'users'),
+    where('approvalStatus', '==', 'pending')
+  )
+  const snap = await getDocs(q)
+  const users = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))
+
+  if (reviewerProfile?.role === 'admin') return users
+
+  const reviewerMinistries = reviewerProfile?.ministries || []
+  if (reviewerProfile?.role !== 'ministry_leader' || reviewerMinistries.length === 0) {
+    return []
+  }
+
+  return users.filter((u) =>
+    (u.requestedMinistryIds || []).some((id) => reviewerMinistries.includes(id))
+  )
+}
+
+export async function approveUser(userId, reviewerUid) {
+  return updateDoc(doc(db, 'users', userId), {
+    approvalStatus: 'approved',
+    approvedBy: reviewerUid,
+    approvedAt: serverTimestamp(),
+    approvalNote: '',
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function rejectUser(userId, reviewerUid, approvalNote = '') {
+  return updateDoc(doc(db, 'users', userId), {
+    approvalStatus: 'rejected',
+    approvedBy: reviewerUid,
+    approvedAt: serverTimestamp(),
+    approvalNote,
+    updatedAt: serverTimestamp(),
+  })
 }

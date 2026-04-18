@@ -3,6 +3,7 @@ import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import PendingApproval from './pages/PendingApproval'
 import VolunteerDashboard from './pages/VolunteerDashboard'
 import Events from './pages/Events'
 import Ministries from './pages/Ministries'
@@ -23,11 +24,28 @@ export default function App() {
           <Layout />
         </ProtectedRoute>
       }>
-        <Route path="/dashboard" element={<VolunteerDashboard />} />
+        <Route path="/pending-approval" element={
+          <ProtectedRoute allowPending>
+            <PendingApproval />
+          </ProtectedRoute>
+        } />
+        <Route path="/dashboard" element={
+          <ProtectedRoute requireApproved>
+            <VolunteerDashboard />
+          </ProtectedRoute>
+        } />
         <Route path="/events" element={<Events />} />
         <Route path="/ministries" element={<Ministries />} />
-        <Route path="/leaderboard" element={<Leaderboard />} />
-        <Route path="/badges" element={<Badges />} />
+        <Route path="/leaderboard" element={
+          <ProtectedRoute requireApproved>
+            <Leaderboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/badges" element={
+          <ProtectedRoute requireApproved>
+            <Badges />
+          </ProtectedRoute>
+        } />
         <Route path="/profile" element={<Profile />} />
         <Route path="/leaders" element={
           <ProtectedRoute requiredRole={['admin', 'ministry_leader']}>
