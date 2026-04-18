@@ -269,3 +269,45 @@ export async function getServiceHoursSummary() {
   const snapshot = await getDocs(collection(db, 'serviceHours'))
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
+
+export async function getPendingUsersForReviewer(reviewerProfile) {
+  const q = query(
+    collection(db, 'users'),
+    where('approvalStatus', '==', 'pending')
+  )
+  const snap = await getDocs(q)
+  const users = snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))
+
+  if (reviewerProfile?.role === 'admin') return users
+
+  const reviewerMinistries = reviewerProfile?.ministries || []
+  if (reviewerProfile?.role !== 'ministry_leader' || reviewerMinistries.length === 0) {
+    return []
+  }
+
+  return users.filter((u) =>
+    (u.requestedMinistryIds || []).some((id) => reviewerMinistries.includes(id))
+  )
+}
+
+export async function approveUser(userId, reviewerUid) {
+  return updateDoc(doc(db, 'users', userId), {
+    approvalStatus: 'approved',
+    approvedBy: reviewerUid,
+    approvedAt: serverTimestamp(),
+    approvalNote: '',
+    updatedAt: serverTimestamp(),
+  })
+}
+
+export async function rejectUser(userId, reviewerUid, approvalNote = '') {
+  return updateDoc(doc(db, 'users', userId), {
+    approvalStatus: 'rejected',
+    approvedBy: reviewerUid,
+    approvedAt: serverTimestamp(),
+    approvalNote,
+    updatedAt: serverTimestamp(),
+  })
+}
