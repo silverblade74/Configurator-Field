@@ -225,7 +225,7 @@ export async function getUserProfile(userId) {
 }
 
 // Create a managed volunteer (no Firebase Auth account needed)
-export async function createManagedVolunteer({ displayName, email, phone }) {
+export async function createManagedVolunteer({ displayName, email, phone, requestedMinistryIds = [] }, adminUid) {
   const ref = await addDoc(collection(db, 'users'), {
     uid: null,
     email: email || '',
@@ -235,11 +235,16 @@ export async function createManagedVolunteer({ displayName, email, phone }) {
     role: 'volunteer',
     managed: true,
     ministries: [],
+    requestedMinistryIds,
     totalHours: 0,
     totalPoints: 0,
     badges: [],
     streak: 0,
     lastServedDate: null,
+    approvalStatus: 'approved',
+    approvedBy: adminUid || null,
+    approvedAt: serverTimestamp(),
+    approvalNote: '',
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   })

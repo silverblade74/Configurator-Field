@@ -331,7 +331,7 @@ export default function AdminDashboard() {
           </div>
 
           {showVolunteerForm && (
-            <form onSubmit={async (e) => { e.preventDefault(); if (!volunteerForm.displayName.trim()) return alert('Name is required'); try { await createManagedVolunteer(volunteerForm); setVolunteerForm({ displayName: '', email: '', phone: '' }); setShowVolunteerForm(false); await loadData() } catch (err) { alert('Failed to create volunteer') } }} className="card space-y-4">
+            <form onSubmit={async (e) => { e.preventDefault(); if (!volunteerForm.displayName.trim()) return alert('Name is required'); try { await createManagedVolunteer(volunteerForm, userProfile?.uid); setVolunteerForm({ displayName: '', email: '', phone: '' }); setShowVolunteerForm(false); await loadData() } catch (err) { alert('Failed to create volunteer') } }} className="card space-y-4">
               <h3 className="font-semibold">Add Volunteer (no account needed)</h3>
               <p className="text-xs text-gray-500">Create a profile for someone who doesn't have or want their own login.</p>
               <div className="grid sm:grid-cols-3 gap-4">
