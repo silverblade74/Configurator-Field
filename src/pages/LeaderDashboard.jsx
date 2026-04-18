@@ -1,10 +1,19 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { getAllUsers, getMinistries, getEvents, getEventSignups } from '../services/firestore'
+import {
+  getAllUsers,
+  getMinistries,
+  getEvents,
+  getEventSignups,
+  getPendingUsersForReviewer,
+  approveUser,
+  rejectUser,
+} from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
 import EmptyState from '../components/EmptyState'
+import Notice from '../components/Notice'
 import {
   Users, Clock, Calendar, ChevronDown, ChevronUp,
   Search, Mail, Phone, TrendingUp, UserCheck, AlertCircle,
@@ -20,18 +29,34 @@ export default function LeaderDashboard() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedDept, setSelectedDept] = useState('all')
   const [eventSignupsMap, setEventSignupsMap] = useState({})
+  const [pendingUsers, setPendingUsers] = useState([])
+  const [approvalLoading, setApprovalLoading] = useState(null)
+  const [message, setMessage] = useState(null)
 
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    try {
-      const [usersData, ministriesData, eventsData] = await Promise.all([
-        getAllUsers(), getMinistries(), getEvents(),
-      ])
-      setUsers(usersData)
-      setMinistries(ministriesData)
-      setEvents(eventsData)
+    const results = await Promise.allSettled([
+      getAllUsers(),
+      getMinistries(),
+      getEvents(),
+      getPendingUsersForReviewer(userProfile),
+    ])
+    const [usersRes, ministriesRes, eventsRes, pendingRes] = results
+    const pick = (res, fallback, label) => {
+      if (res.status === 'fulfilled') return res.value
+      console.error(`Error loading ${label}:`, res.reason)
+      return fallback
+    }
+    const usersData = pick(usersRes, [], 'users')
+    const ministriesData = pick(ministriesRes, [], 'ministries')
+    const eventsData = pick(eventsRes, [], 'events')
+    setUsers(usersData)
+    setMinistries(ministriesData)
+    setEvents(eventsData)
+    setPendingUsers(pick(pendingRes, [], 'pending users'))
 
+    try {
       const upcoming = eventsData.filter((e) => e.date?.toDate() > new Date()).slice(0, 10)
       const signupsMap = {}
       await Promise.all(
@@ -41,8 +66,51 @@ export default function LeaderDashboard() {
         })
       )
       setEventSignupsMap(signupsMap)
-    } catch (err) { console.error('Error loading leader data:', err) }
+    } catch (err) {
+      console.error('Error loading event signups:', err)
+    }
     setLoading(false)
+  }
+
+  async function handleApproveUser(userId) {
+    setApprovalLoading(userId)
+    setMessage(null)
+    try {
+      await approveUser(userId, userProfile.uid)
+    } catch (err) {
+      console.error('approveUser failed:', err)
+      setMessage({ type: 'error', text: 'Failed to approve user.' })
+      setApprovalLoading(null)
+      return
+    }
+    setMessage({ type: 'success', text: 'User approved.' })
+    try {
+      await loadData()
+    } catch (err) {
+      // keep the success message
+    }
+    setApprovalLoading(null)
+  }
+
+  async function handleRejectUser(userId) {
+    const note = window.prompt('Optional rejection note') || ''
+    setApprovalLoading(userId)
+    setMessage(null)
+    try {
+      await rejectUser(userId, userProfile.uid, note)
+    } catch (err) {
+      console.error('rejectUser failed:', err)
+      setMessage({ type: 'error', text: 'Failed to reject user.' })
+      setApprovalLoading(null)
+      return
+    }
+    setMessage({ type: 'success', text: 'User rejected.' })
+    try {
+      await loadData()
+    } catch (err) {
+      // keep the success message
+    }
+    setApprovalLoading(null)
   }
 
   function getMinistryForDept(dept) {
@@ -117,6 +185,48 @@ export default function LeaderDashboard() {
         {isLeaderOnly && !leaderDept && (
           <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
             You haven't been assigned to a department yet. Ask an admin to assign you in Admin \u2192 Users.
+          </div>
+        )}
+      </div>
+
+      {message && <Notice type={message.type}>{message.text}</Notice>}
+
+      <div className="card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-lg">Pending Approvals for my ministries</h2>
+          <span className="badge bg-blue-100 text-blue-700">{pendingUsers.length} pending</span>
+        </div>
+        {pendingUsers.length === 0 ? (
+          <p className="text-sm text-gray-500">No pending users in your ministries.</p>
+        ) : (
+          <div className="space-y-3">
+            {pendingUsers.map((u) => (
+              <div key={u.id} className="flex flex-col gap-3 rounded-lg border border-gray-100 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-medium">{u.displayName || u.email}</p>
+                  <p className="text-sm text-gray-500">{u.email}</p>
+                  <p className="text-xs text-gray-400">
+                    Requested ministries: {(u.requestedMinistryIds || []).map((id) => ministries.find((m) => m.id === id)?.name || id).join(', ') || 'None selected'}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="btn-primary text-sm"
+                    disabled={approvalLoading === u.id}
+                    onClick={() => handleApproveUser(u.id)}
+                  >
+                    {approvalLoading === u.id ? 'Approving...' : 'Approve'}
+                  </button>
+                  <button
+                    className="btn-secondary text-sm"
+                    disabled={approvalLoading === u.id}
+                    onClick={() => handleRejectUser(u.id)}
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
