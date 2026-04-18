@@ -31,6 +31,7 @@ export default function AdminDashboard() {
   const [serviceHours, setServiceHours] = useState([])
   const [pendingUsers, setPendingUsers] = useState([])
   const [approvalLoading, setApprovalLoading] = useState(null)
+  const [userFilter, setUserFilter] = useState('all')
   const [message, setMessage] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showEventForm, setShowEventForm] = useState(false)
@@ -423,11 +424,31 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {tab === 'users' && (
+      {tab === 'users' && (() => {
+        const filteredUsers = users.filter((u) => {
+          const status = u.approvalStatus || (u.role === 'admin' || u.role === 'ministry_leader' ? 'approved' : 'pending')
+          if (userFilter === 'pending') return status === 'pending'
+          if (userFilter === 'approved') return status === 'approved'
+          if (userFilter === 'rejected') return status === 'rejected'
+          if (userFilter === 'managed') return u.managed === true
+          return true
+        })
+        return (
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="font-semibold text-lg">Manage Users ({users.length})</h2>
-            <button onClick={() => setShowVolunteerForm(!showVolunteerForm)} className="btn-primary flex items-center space-x-1"><UserPlus size={16} /><span>Add Volunteer</span></button>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <h2 className="font-semibold text-lg">Manage Users ({filteredUsers.length})</h2>
+            <select
+              className="input text-sm"
+              value={userFilter}
+              onChange={(e) => setUserFilter(e.target.value)}
+            >
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="managed">Managed volunteers</option>
+            </select>
+            <button onClick={() => setShowVolunteerForm(!showVolunteerForm)} className="btn-primary flex items-center space-x-1 ml-auto"><UserPlus size={16} /><span>Add Volunteer</span></button>
           </div>
 
           {showVolunteerForm && (
@@ -445,14 +466,19 @@ export default function AdminDashboard() {
 
           <div className="card p-0 overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3 hidden sm:table-cell">Email</th><th className="text-right px-4 py-3">Hours</th><th className="text-left px-4 py-3">Role</th><th className="text-left px-4 py-3 hidden md:table-cell">Department</th><th className="text-right px-4 py-3 w-16"></th></tr></thead>
+              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3 hidden sm:table-cell">Email</th><th className="text-right px-4 py-3">Hours</th><th className="text-left px-4 py-3">Role</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3 hidden md:table-cell">Department</th><th className="text-right px-4 py-3 w-16"></th></tr></thead>
               <tbody className="divide-y">
-                {users.map((u) => (
+                {filteredUsers.map((u) => (
                   <tr key={u.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3"><div><span className="font-medium">{u.displayName || 'Unknown'}</span>{u.managed && <span className="ml-2 badge bg-gray-100 text-gray-500">No account</span>}</div></td>
                     <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{u.email || '-'}</td>
                     <td className="px-4 py-3 text-right">{formatHours(u.totalHours || 0)}</td>
                     <td className="px-4 py-3"><select className="input py-1 text-xs w-auto" value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}><option value="volunteer">Volunteer</option><option value="ministry_leader">Ministry Leader</option><option value="admin">Admin</option></select></td>
+                    <td className="px-4 py-3">
+                      <span className="badge bg-gray-100 text-gray-700 capitalize">
+                        {u.approvalStatus || (u.role === 'admin' || u.role === 'ministry_leader' ? 'approved' : 'pending')}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 hidden md:table-cell">
                       {u.role === 'ministry_leader' ? (
                         <select className="input py-1 text-xs w-auto" value={u.assignedDepartment || ''} onChange={async (e) => { await updateVolunteerProfile(u.id, { assignedDepartment: e.target.value || null }); await loadData() }}>
@@ -468,7 +494,8 @@ export default function AdminDashboard() {
             </table>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {tab === 'checkin' && (
         <div className="space-y-4">
