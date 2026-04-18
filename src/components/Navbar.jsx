@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Menu, X, LogOut, User, LayoutDashboard, Calendar, Users, Trophy, Award, ClipboardList } from 'lucide-react'
+import { Menu, X, LogOut, User, LayoutDashboard, Calendar, Users, Trophy, Award, ClipboardList, Clock } from 'lucide-react'
 
 export default function Navbar() {
-  const { currentUser, userProfile, logout } = useAuth()
+  const { currentUser, userProfile, isApproved, isPending, isRejected, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -17,14 +17,23 @@ export default function Navbar() {
     navigate('/login')
   }
 
-  const navLinks = [
-    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/events', label: 'Events', icon: Calendar },
-    { to: '/ministries', label: 'Ministries', icon: Users },
-    { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
-    { to: '/badges', label: 'Badges', icon: Award },
-  ]
-
+  const navLinks = []
+  if (isApproved) {
+    navLinks.push({ to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard })
+  }
+  navLinks.push({ to: '/events', label: 'Events', icon: Calendar })
+  navLinks.push({ to: '/ministries', label: 'Ministries', icon: Users })
+  if (isApproved) {
+    navLinks.push({ to: '/leaderboard', label: 'Leaderboard', icon: Trophy })
+    navLinks.push({ to: '/badges', label: 'Badges', icon: Award })
+  }
+  if (isPending || isRejected) {
+    navLinks.unshift({
+      to: '/pending-approval',
+      label: isRejected ? 'Account not approved' : 'Pending review',
+      icon: Clock,
+    })
+  }
   if (isAdmin || isLeader) {
     navLinks.push({ to: '/leaders', label: 'Leaders', icon: ClipboardList })
   }
@@ -39,7 +48,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Link to="/dashboard" className="flex items-center space-x-2">
+            <Link to={isApproved ? '/dashboard' : '/pending-approval'} className="flex items-center space-x-2">
               <span className="text-2xl">\u26EA</span>
               <span className="font-bold text-lg text-primary-700 hidden sm:block">VolunteerHub</span>
             </Link>
