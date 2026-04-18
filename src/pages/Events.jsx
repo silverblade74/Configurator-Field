@@ -21,7 +21,7 @@ export default function Events() {
   async function loadData() {
     try {
       const [eventsData, ministriesData, signupsData] = await Promise.all([
-        getEvents(), getMinistries(), userProfile ? getUserSignups(userProfile.uid) : [],
+        getEvents(), getMinistries(), userProfile ? getUserSignups(userProfile.id) : [],
       ])
       setEvents(eventsData)
       setMinistries(ministriesData)
@@ -34,7 +34,7 @@ export default function Events() {
     setActionLoading(eventId)
     setMessage(null)
     try {
-      await signUpForEvent(eventId, userProfile.uid, userProfile.displayName)
+      await signUpForEvent(eventId, userProfile.id, userProfile.displayName)
       setMessage({ type: 'success', text: 'Signed up.' })
       await loadData()
     } catch (err) {
