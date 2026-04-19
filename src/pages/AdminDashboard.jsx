@@ -44,6 +44,7 @@ export default function AdminDashboard() {
   const [manualHoursMap, setManualHoursMap] = useState({})
   const [showAddVolunteer, setShowAddVolunteer] = useState(false)
   const [volunteerSearch, setVolunteerSearch] = useState('')
+  const [signupSearch, setSignupSearch] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
 
   useEffect(() => { loadData() }, [])
@@ -88,7 +89,7 @@ export default function AdminDashboard() {
   async function handleRoleChange(userId, newRole) { await updateUserRole(userId, newRole); await loadData() }
 
   async function openCheckIn(eventId) {
-    setCheckInEventId(eventId); setManualHoursMap({}); setShowAddVolunteer(false); setVolunteerSearch('')
+    setCheckInEventId(eventId); setManualHoursMap({}); setShowAddVolunteer(false); setVolunteerSearch(''); setSignupSearch('')
     const signups = await getEventSignups(eventId); setEventSignups(signups)
   }
 
@@ -132,6 +133,20 @@ export default function AdminDashboard() {
   function setManualHours(signupId, value) { setManualHoursMap((prev) => ({ ...prev, [signupId]: value })) }
   function getMinistryName(id) { return ministries.find((m) => m.id === id)?.name || 'General' }
   function getDeptInfo(id) { return DEPARTMENTS.find((d) => d.id === id) }
+
+  function matchesSearch(candidate, query) {
+    if (!query || query.length < 2) return true
+    const q = query.toLowerCase()
+    const name = (candidate.userName || candidate.displayName || '').toLowerCase()
+    const email = (candidate.email || '').toLowerCase()
+    return name.includes(q) || email.includes(q)
+  }
+
+  function signupMatches(signup) {
+    if (!signupSearch || signupSearch.length < 2) return true
+    const user = users.find((u) => u.id === signup.userId)
+    return matchesSearch({ ...signup, email: user?.email }, signupSearch)
+  }
 
   async function openAssignEvent(eventId) {
     if (assignEventId === eventId) { setAssignEventId(null); return }
@@ -435,11 +450,24 @@ export default function AdminDashboard() {
                 </div>
               )}
 
+              {eventSignups.length > 0 && (
+                <div className="relative mb-3">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    type="text"
+                    className="input pl-9 text-sm"
+                    placeholder="Search signed-up volunteers by name or email…"
+                    value={signupSearch}
+                    onChange={(e) => setSignupSearch(e.target.value)}
+                  />
+                </div>
+              )}
+
               {eventSignups.length === 0 ? (
                 <p className="text-gray-400 text-sm text-center py-4">No signups for this event</p>
               ) : (
                 <div className="space-y-2">
-                  {eventSignups.sort((a, b) => { const order = { checked_in: 0, signed_up: 1, checked_out: 2, released: 3, no_show: 4 }; return (order[a.status] || 5) - (order[b.status] || 5) }).map((signup) => (
+                  {eventSignups.filter(signupMatches).sort((a, b) => { const order = { checked_in: 0, signed_up: 1, checked_out: 2, released: 3, no_show: 4 }; return (order[a.status] || 5) - (order[b.status] || 5) }).map((signup) => (
                     <div key={signup.id} className={`p-3 rounded-lg ${signup.status === 'checked_in' ? 'bg-green-50 border border-green-200' : signup.status === 'no_show' ? 'bg-red-50 border border-red-100' : signup.status === 'released' ? 'bg-yellow-50 border border-yellow-100' : 'bg-gray-50'}`}>
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div className="flex items-center gap-3 min-w-0">
