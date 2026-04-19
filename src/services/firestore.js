@@ -62,7 +62,9 @@ export async function signUpForEvent(eventId, userId, userName) {
 
   await addDoc(collection(db, 'eventSignups'), {
     eventId, userId, userName, status: 'signed_up',
-    checkedInAt: null, checkedOutAt: null, hoursLogged: 0, department: null, createdAt: serverTimestamp(),
+    checkedInAt: null, checkedOutAt: null, hoursLogged: 0, department: null,
+    sessions: [],
+    createdAt: serverTimestamp(),
   })
   await updateDoc(doc(db, 'events', eventId), { signupCount: increment(1) })
 }
@@ -87,43 +89,11 @@ export async function getUserSignups(userId) {
 // --- Check-in / Check-out ---
 
 export async function checkIn(signupId) {
-  return updateDoc(doc(db, 'eventSignups', signupId), { status: 'checked_in', checkedInAt: serverTimestamp() })
+  return startSession(signupId)
 }
 
 export async function checkOut(signupId, userId, manualHours = null) {
-  const signupRef = doc(db, 'eventSignups', signupId)
-  const signupSnap = await getDoc(signupRef)
-  const signupData = signupSnap.data()
-
-  let hoursLogged
-  if (manualHours !== null && manualHours >= 0) {
-    hoursLogged = Number(manualHours)
-  } else {
-    const checkedInAt = signupData.checkedInAt?.toDate()
-    const now = new Date()
-    hoursLogged = checkedInAt ? Math.round(((now - checkedInAt) / (1000 * 60 * 60)) * 100) / 100 : 0
-  }
-
-  await updateDoc(signupRef, { status: 'checked_out', checkedOutAt: serverTimestamp(), hoursLogged })
-
-  await addDoc(collection(db, 'attendanceLogs'), {
-    userId, signupId, eventId: signupData.eventId,
-    checkedInAt: signupData.checkedInAt, checkedOutAt: Timestamp.now(),
-    hoursLogged, department: signupData.department || null, createdAt: serverTimestamp(),
-  })
-
-  const pointsEarned = Math.floor(hoursLogged * 10)
-  await updateDoc(doc(db, 'users', userId), {
-    totalHours: increment(hoursLogged), totalPoints: increment(pointsEarned),
-    lastServedDate: serverTimestamp(), updatedAt: serverTimestamp(),
-  })
-
-  await addDoc(collection(db, 'serviceHours'), {
-    userId, eventId: signupData.eventId, hours: hoursLogged, points: pointsEarned,
-    department: signupData.department || null, date: serverTimestamp(),
-  })
-
-  return { hoursLogged, pointsEarned }
+  return endSession(signupId, userId, { manualHours })
 }
 
 export async function adminAddVolunteer(eventId, userId, userName) {
@@ -131,10 +101,16 @@ export async function adminAddVolunteer(eventId, userId, userName) {
   const snapshot = await getDocs(existing)
   if (!snapshot.empty) throw new Error('Already added')
 
+  const now = Timestamp.now()
   const ref = await addDoc(collection(db, 'eventSignups'), {
-    eventId, userId, userName, status: 'checked_in',
-    checkedInAt: serverTimestamp(), checkedOutAt: null, hoursLogged: 0,
-    department: null, createdAt: serverTimestamp(),
+    eventId, userId, userName,
+    status: 'checked_in',
+    checkedInAt: now,
+    checkedOutAt: null,
+    hoursLogged: 0,
+    department: null,
+    sessions: [{ checkInAt: now, checkOutAt: null, hoursLogged: 0, department: null }],
+    createdAt: serverTimestamp(),
   })
   await updateDoc(doc(db, 'events', eventId), { signupCount: increment(1) })
   return ref
@@ -152,7 +128,17 @@ export async function markNoShow(signupId) {
 
 // Assign a volunteer to a department for this specific event
 export async function assignDepartment(signupId, department) {
-  return updateDoc(doc(db, 'eventSignups', signupId), { department: department || null })
+  const ref = doc(db, 'eventSignups', signupId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) return
+  const data = snap.data()
+  const sessions = Array.isArray(data.sessions) ? [...data.sessions] : []
+  const idx = sessions.length - 1
+  if (idx >= 0 && !sessions[idx].checkOutAt) {
+    sessions[idx] = { ...sessions[idx], department: department || null }
+    return updateDoc(ref, { sessions, department: department || null })
+  }
+  return updateDoc(ref, { department: department || null })
 }
 
 // --- Sessions (multi-session check-in/out) ---
