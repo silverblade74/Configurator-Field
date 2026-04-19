@@ -155,6 +155,127 @@ export async function assignDepartment(signupId, department) {
   return updateDoc(doc(db, 'eventSignups', signupId), { department: department || null })
 }
 
+// --- Sessions (multi-session check-in/out) ---
+
+// Pure helper. Returns the last session if it has no checkOutAt, else null.
+// Tolerates legacy signups that have checkedInAt but no sessions[] by
+// synthesizing a single-element view. The backfill script makes this branch
+// unnecessary after rollout, but the fallback keeps pre-backfill clients safe.
+export function getOpenSession(signup) {
+  const sessions = Array.isArray(signup?.sessions) ? signup.sessions : null
+  if (sessions && sessions.length > 0) {
+    const last = sessions[sessions.length - 1]
+    return last.checkOutAt ? null : last
+  }
+  // Legacy fallback
+  if (signup?.checkedInAt && !signup?.checkedOutAt) {
+    return { checkInAt: signup.checkedInAt, checkOutAt: null, hoursLogged: 0, department: signup.department || null }
+  }
+  return null
+}
+
+// Returns the effective session list for a signup, synthesizing one from
+// legacy fields when `sessions` is missing. Read-only — does not mutate.
+export function getSessions(signup) {
+  if (Array.isArray(signup?.sessions)) return signup.sessions
+  if (signup?.checkedInAt) {
+    return [{
+      checkInAt: signup.checkedInAt,
+      checkOutAt: signup.checkedOutAt || null,
+      hoursLogged: signup.hoursLogged || 0,
+      department: signup.department || null,
+    }]
+  }
+  return []
+}
+
+// Opens a new session on a signup. Fails loudly if one is already open.
+// Writes sessions[] (append), status='checked_in', checkedInAt (first session only).
+export async function startSession(signupId, department = null) {
+  const ref = doc(db, 'eventSignups', signupId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Signup not found')
+  const data = snap.data()
+
+  const existingOpen = getOpenSession({ ...data, id: snap.id })
+  if (existingOpen) throw new Error('A session is already open for this volunteer')
+
+  const existingSessions = Array.isArray(data.sessions) ? data.sessions : []
+  const now = Timestamp.now()
+  const newSession = { checkInAt: now, checkOutAt: null, hoursLogged: 0, department: department || null }
+
+  const patch = {
+    sessions: [...existingSessions, newSession],
+    status: 'checked_in',
+    checkedOutAt: null,
+    department: department || null,
+  }
+  // Keep parent checkedInAt aligned with first session for legacy readers.
+  if (existingSessions.length === 0) patch.checkedInAt = now
+
+  await updateDoc(ref, patch)
+}
+
+// Closes the currently open session. manualHours overrides the clock math
+// when supplied. Writes one /attendanceLogs row and one /serviceHours row,
+// increments /users/{userId}.totalHours + totalPoints + lastServedDate.
+// Matches today's checkOut side-effects, scoped to the closing session.
+export async function endSession(signupId, userId, { manualHours = null } = {}) {
+  const ref = doc(db, 'eventSignups', signupId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Signup not found')
+  const data = snap.data()
+
+  const sessions = Array.isArray(data.sessions) ? [...data.sessions] : []
+  const idx = sessions.length - 1
+  const open = idx >= 0 ? sessions[idx] : null
+  if (!open || open.checkOutAt) throw new Error('No open session to close')
+
+  const now = Timestamp.now()
+  let hoursLogged
+  if (manualHours !== null && Number(manualHours) >= 0) {
+    hoursLogged = Number(manualHours)
+  } else {
+    const checkedInAt = open.checkInAt?.toDate?.() || open.checkInAt
+    const start = checkedInAt instanceof Date ? checkedInAt : new Date(checkedInAt)
+    hoursLogged = Math.round(((now.toDate() - start) / (1000 * 60 * 60)) * 100) / 100
+  }
+
+  const closed = { ...open, checkOutAt: now, hoursLogged }
+  sessions[idx] = closed
+  const totalHours = sessions.reduce((sum, s) => sum + (s.hoursLogged || 0), 0)
+
+  await updateDoc(ref, {
+    sessions,
+    hoursLogged: totalHours,
+    status: 'checked_out',
+    checkedOutAt: now,
+  })
+
+  await addDoc(collection(db, 'attendanceLogs'), {
+    userId, signupId, eventId: data.eventId,
+    checkedInAt: open.checkInAt, checkedOutAt: now,
+    hoursLogged, department: closed.department || null,
+    createdAt: serverTimestamp(),
+  })
+
+  const pointsEarned = Math.floor(hoursLogged * 10)
+  if (userId) {
+    await updateDoc(doc(db, 'users', userId), {
+      totalHours: increment(hoursLogged),
+      totalPoints: increment(pointsEarned),
+      lastServedDate: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+    await addDoc(collection(db, 'serviceHours'), {
+      userId, eventId: data.eventId, hours: hoursLogged, points: pointsEarned,
+      department: closed.department || null, date: serverTimestamp(),
+    })
+  }
+
+  return { hoursLogged, pointsEarned }
+}
+
 // --- Leaderboard ---
 
 export async function getLeaderboard(limitCount = 20) {
