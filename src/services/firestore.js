@@ -357,6 +357,16 @@ export async function createManagedVolunteer({ displayName, email, phone }) {
   return ref
 }
 
+// One-shot "new person just walked in" flow:
+// 1) create managed volunteer (no Auth account), 2) open a session on the event.
+// Returns { userId, signupId }. Name is required.
+export async function createWalkInVolunteer(eventId, { displayName, email = '', phone = '' }) {
+  if (!displayName || !displayName.trim()) throw new Error('Name is required')
+  const userRef = await createManagedVolunteer({ displayName: displayName.trim(), email, phone })
+  const signupRef = await adminAddVolunteer(eventId, userRef.id, displayName.trim())
+  return { userId: userRef.id, signupId: signupRef.id }
+}
+
 export async function updateVolunteerProfile(userId, data) {
   return updateDoc(doc(db, 'users', userId), { ...data, updatedAt: serverTimestamp() })
 }
