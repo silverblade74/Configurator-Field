@@ -233,12 +233,16 @@ export async function endSession(signupId, userId, { manualHours = null } = {}) 
 
   const now = Timestamp.now()
   let hoursLogged
-  if (manualHours !== null && Number(manualHours) >= 0) {
+  if (manualHours !== null && manualHours !== '' && Number(manualHours) >= 0) {
     hoursLogged = Number(manualHours)
   } else {
     const checkedInAt = open.checkInAt?.toDate?.() || open.checkInAt
     const start = checkedInAt instanceof Date ? checkedInAt : new Date(checkedInAt)
     hoursLogged = Math.round(((now.toDate() - start) / (1000 * 60 * 60)) * 100) / 100
+  }
+
+  if (!Number.isFinite(hoursLogged) || hoursLogged < 0) {
+    throw new Error('Could not compute session hours — check-in time may be corrupt')
   }
 
   const closed = { ...open, checkOutAt: now, hoursLogged }
