@@ -46,6 +46,7 @@ export default function AdminDashboard() {
   const [showAddVolunteer, setShowAddVolunteer] = useState(false)
   const [volunteerSearch, setVolunteerSearch] = useState('')
   const [signupSearch, setSignupSearch] = useState('')
+  const [expandedSignupId, setExpandedSignupId] = useState(null)
   const [bulkLoading, setBulkLoading] = useState(false)
   const [showNewWalkIn, setShowNewWalkIn] = useState(false)
   const [newWalkInForm, setNewWalkInForm] = useState({ displayName: '', email: '', phone: '' })
@@ -113,14 +114,19 @@ export default function AdminDashboard() {
 
   async function handleBulkCheckIn() {
     setBulkLoading(true)
-    for (const s of eventSignups.filter((s) => s.status === 'signed_up')) { await checkIn(s.id) }
+    for (const s of eventSignups) {
+      if (getOpenSession(s)) continue
+      if (s.status === 'released' || s.status === 'no_show') continue
+      await checkIn(s.id)
+    }
     await refreshSignups(); setBulkLoading(false)
   }
 
   async function handleBulkCheckOut() {
     if (!confirm('Check out all checked-in volunteers?')) return
     setBulkLoading(true)
-    for (const s of eventSignups.filter((s) => s.status === 'checked_in')) {
+    for (const s of eventSignups) {
+      if (!getOpenSession(s)) continue
       const manual = manualHoursMap[s.id]
       const hours = manual !== undefined && manual !== '' ? Number(manual) : null
       await checkOut(s.id, s.userId, hours)
@@ -507,9 +513,38 @@ export default function AdminDashboard() {
                           <div className="min-w-0">
                             <p className="font-medium text-sm">{signup.userName}</p>
                             <p className="text-xs text-gray-400 capitalize">
-                              {signup.status.replace('_', ' ')}
-                              {signup.status === 'checked_in' && signup.checkedInAt && (<span> since {signup.checkedInAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>)}
+                              {getOpenSession(signup) ? 'checked in' : signup.status.replace('_', ' ')}
+                              {(() => {
+                                const open = getOpenSession(signup)
+                                if (!open) return null
+                                const when = open.checkInAt?.toDate?.() || open.checkInAt
+                                const time = when instanceof Date ? when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''
+                                return <span> since {time}</span>
+                              })()}
                             </p>
+                            {(() => {
+                              const sessions = Array.isArray(signup.sessions) ? signup.sessions : []
+                              if (sessions.length === 0) return null
+                              const total = sessions.reduce((s, x) => s + (x.hoursLogged || 0), 0)
+                              const expanded = expandedSignupId === signup.id
+                              return (
+                                <div className="mt-1 text-xs text-gray-500">
+                                  <button onClick={() => setExpandedSignupId(expanded ? null : signup.id)} className="inline-flex items-center gap-1 hover:text-gray-700">
+                                    {sessions.length} session{sessions.length === 1 ? '' : 's'} · {formatHours(total)} total
+                                    {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                  </button>
+                                  {expanded && (
+                                    <ul className="mt-1 ml-2 space-y-0.5">
+                                      {sessions.map((s, i) => {
+                                        const inAt = s.checkInAt?.toDate?.()?.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) || '—'
+                                        const outAt = s.checkOutAt ? s.checkOutAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : 'open'
+                                        return <li key={i}>{inAt} → {outAt} · {formatHours(s.hoursLogged || 0)}{s.department ? ` · ${getDeptInfo(s.department)?.name || s.department}` : ''}</li>
+                                      })}
+                                    </ul>
+                                  )}
+                                </div>
+                              )
+                            })()}
                           </div>
                           {(signup.status === 'signed_up' || signup.status === 'checked_in') && (
                             <select className="input py-1 text-xs w-auto" value={signup.department || ''} onChange={async (e) => { await assignDepartment(signup.id, e.target.value); await refreshSignups() }}>
@@ -522,18 +557,27 @@ export default function AdminDashboard() {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          {signup.status === 'signed_up' && (<>
-                            <button onClick={() => handleCheckIn(signup.id)} disabled={checkInLoading === signup.id} className="btn-primary text-xs py-1 px-3 flex items-center space-x-1"><UserCheck size={12} /><span>{checkInLoading === signup.id ? '...' : 'Check In'}</span></button>
-                            <button onClick={() => handleNoShow(signup.id)} disabled={checkInLoading === signup.id} className="text-gray-400 hover:text-red-500 p-1" title="Mark as no-show"><XCircle size={16} /></button>
-                          </>)}
-                          {signup.status === 'checked_in' && (<>
-                            <input type="number" step="0.25" min="0" className="input py-1 text-xs w-16 text-center" placeholder="hrs" value={manualHoursMap[signup.id] || ''} onChange={(e) => setManualHours(signup.id, e.target.value)} title="Override hours (leave blank for auto-calculate)" />
-                            <button onClick={() => handleCheckOut(signup.id, signup.userId)} disabled={checkInLoading === signup.id} className="btn-primary text-xs py-1 px-3 flex items-center space-x-1"><UserX size={12} /><span>{checkInLoading === signup.id ? '...' : 'Check Out'}</span></button>
-                            <button onClick={() => handleRelease(signup.id)} disabled={checkInLoading === signup.id} className="text-gray-400 hover:text-amber-500 p-1" title="Release (not needed, 0 hours)"><MinusCircle size={16} /></button>
-                          </>)}
-                          {signup.status === 'checked_out' && (<span className="text-xs text-green-600 font-medium">{formatHours(signup.hoursLogged)} logged</span>)}
-                          {signup.status === 'released' && (<span className="text-xs text-amber-600 font-medium">Released</span>)}
-                          {signup.status === 'no_show' && (<span className="text-xs text-red-500 font-medium">No-show</span>)}
+                          {(() => {
+                            const open = getOpenSession(signup)
+                            if (signup.status === 'released') return <span className="text-xs text-amber-600 font-medium">Released</span>
+                            if (signup.status === 'no_show') return <span className="text-xs text-red-500 font-medium">No-show</span>
+                            if (open) {
+                              return (<>
+                                <input type="number" step="0.25" min="0" className="input py-1 text-xs w-16 text-center" placeholder="hrs" value={manualHoursMap[signup.id] || ''} onChange={(e) => setManualHours(signup.id, e.target.value)} title="Override hours (leave blank for auto-calculate)" />
+                                <button onClick={() => handleCheckOut(signup.id, signup.userId)} disabled={checkInLoading === signup.id} className="btn-primary text-xs py-1 px-3 flex items-center space-x-1"><UserX size={12} /><span>{checkInLoading === signup.id ? '...' : 'Check Out'}</span></button>
+                                <button onClick={() => handleRelease(signup.id)} disabled={checkInLoading === signup.id} className="text-gray-400 hover:text-amber-500 p-1" title="Release (not needed, 0 hours)"><MinusCircle size={16} /></button>
+                              </>)
+                            }
+                            return (<>
+                              <button onClick={() => handleCheckIn(signup.id)} disabled={checkInLoading === signup.id} className="btn-primary text-xs py-1 px-3 flex items-center space-x-1"><UserCheck size={12} /><span>{checkInLoading === signup.id ? '...' : 'Check In'}</span></button>
+                              {signup.status === 'signed_up' && (
+                                <button onClick={() => handleNoShow(signup.id)} disabled={checkInLoading === signup.id} className="text-gray-400 hover:text-red-500 p-1" title="Mark as no-show"><XCircle size={16} /></button>
+                              )}
+                              {(signup.hoursLogged || 0) > 0 && (
+                                <span className="text-xs text-green-600 font-medium">{formatHours(signup.hoursLogged)} logged</span>
+                              )}
+                            </>)
+                          })()}
                         </div>
                       </div>
                     </div>
