@@ -18,6 +18,8 @@ import {
   Search, MinusCircle, XCircle, UserPlus,
 } from 'lucide-react'
 import { Timestamp } from 'firebase/firestore'
+import { useAsyncAction } from '../hooks/useAsyncAction'
+import { useToast } from '../contexts/ToastContext'
 
 export default function AdminDashboard() {
   const { userProfile } = useAuth()
@@ -51,6 +53,9 @@ export default function AdminDashboard() {
   const [showNewWalkIn, setShowNewWalkIn] = useState(false)
   const [newWalkInForm, setNewWalkInForm] = useState({ displayName: '', email: '', phone: '' })
 
+  const { run } = useAsyncAction()
+  const toast = useToast()
+
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
@@ -69,28 +74,36 @@ export default function AdminDashboard() {
 
   async function handleCreateEvent(e) {
     e.preventDefault()
-    try {
+    await run(async () => {
       await createEvent({ ...eventForm, date: Timestamp.fromDate(new Date(eventForm.date)), maxVolunteers: eventForm.maxVolunteers ? Number(eventForm.maxVolunteers) : null, durationHours: eventForm.durationHours ? Number(eventForm.durationHours) : null })
       setShowEventForm(false)
       setEventForm({ title: '', description: '', date: '', location: '', ministryId: '', maxVolunteers: '', durationHours: '' })
       await loadData()
-    } catch (err) { alert('Failed to create event') }
+    }, { successMessage: 'Event created', errorMessage: 'Failed to create event' })
   }
 
-  async function handleDeleteEvent(id) { if (!confirm('Delete this event?')) return; await deleteEvent(id); await loadData() }
+  async function handleDeleteEvent(id) {
+    if (!confirm('Delete this event?')) return
+    await run(async () => { await deleteEvent(id); await loadData() }, { successMessage: 'Event deleted', errorMessage: 'Failed to delete event' })
+  }
 
   async function handleCreateMinistry(e) {
     e.preventDefault()
-    try {
+    await run(async () => {
       await createMinistry(ministryForm)
       setShowMinistryForm(false)
       setMinistryForm({ name: '', description: '', leaderName: '', contactEmail: '' })
       await loadData()
-    } catch (err) { alert('Failed to create ministry') }
+    }, { successMessage: 'Ministry created', errorMessage: 'Failed to create ministry' })
   }
 
-  async function handleDeleteMinistry(id) { if (!confirm('Delete this ministry?')) return; await deleteMinistry(id); await loadData() }
-  async function handleRoleChange(userId, newRole) { await updateUserRole(userId, newRole); await loadData() }
+  async function handleDeleteMinistry(id) {
+    if (!confirm('Delete this ministry?')) return
+    await run(async () => { await deleteMinistry(id); await loadData() }, { successMessage: 'Ministry deleted', errorMessage: 'Failed to delete ministry' })
+  }
+  async function handleRoleChange(userId, newRole) {
+    await run(async () => { await updateUserRole(userId, newRole); await loadData() }, { successMessage: 'Role updated', errorMessage: 'Failed to update role' })
+  }
 
   async function openCheckIn(eventId) {
     setCheckInEventId(eventId); setManualHoursMap({}); setShowAddVolunteer(false); setVolunteerSearch(''); setSignupSearch(''); setExpandedSignupId(null)
@@ -98,19 +111,35 @@ export default function AdminDashboard() {
   }
 
   async function refreshSignups() { const signups = await getEventSignups(checkInEventId); setEventSignups(signups) }
-  async function handleCheckIn(signupId) { setCheckInLoading(signupId); await checkIn(signupId); await refreshSignups(); setCheckInLoading(null) }
+  async function handleCheckIn(signupId) {
+    setCheckInLoading(signupId)
+    await run(async () => { await checkIn(signupId); await refreshSignups() }, { successMessage: 'Checked in', errorMessage: 'Check-in failed' })
+      .finally(() => setCheckInLoading(null))
+  }
 
   async function handleCheckOut(signupId, userId) {
     setCheckInLoading(signupId)
     const manual = manualHoursMap[signupId]
     const hours = manual !== undefined && manual !== '' ? Number(manual) : null
-    await checkOut(signupId, userId, hours)
-    setManualHoursMap((prev) => { const n = { ...prev }; delete n[signupId]; return n })
-    await refreshSignups(); setCheckInLoading(null); await loadData()
+    await run(async () => {
+      await checkOut(signupId, userId, hours)
+      setManualHoursMap((prev) => { const n = { ...prev }; delete n[signupId]; return n })
+      await refreshSignups()
+      await loadData()
+    }, { successMessage: 'Checked out', errorMessage: 'Check-out failed' })
+      .finally(() => setCheckInLoading(null))
   }
 
-  async function handleRelease(signupId) { setCheckInLoading(signupId); await releaseVolunteer(signupId); await refreshSignups(); setCheckInLoading(null) }
-  async function handleNoShow(signupId) { setCheckInLoading(signupId); await markNoShow(signupId); await refreshSignups(); setCheckInLoading(null) }
+  async function handleRelease(signupId) {
+    setCheckInLoading(signupId)
+    await run(async () => { await releaseVolunteer(signupId); await refreshSignups() }, { successMessage: 'Released', errorMessage: 'Release failed' })
+      .finally(() => setCheckInLoading(null))
+  }
+  async function handleNoShow(signupId) {
+    setCheckInLoading(signupId)
+    await run(async () => { await markNoShow(signupId); await refreshSignups() }, { successMessage: 'Marked no-show', errorMessage: 'Update failed' })
+      .finally(() => setCheckInLoading(null))
+  }
 
   async function handleBulkCheckIn() {
     setBulkLoading(true)
@@ -135,22 +164,25 @@ export default function AdminDashboard() {
   }
 
   async function handleAddWalkIn(userId, displayName) {
-    try { await adminAddVolunteer(checkInEventId, userId, displayName); setVolunteerSearch(''); setShowAddVolunteer(false); await refreshSignups(); await loadData() }
-    catch (err) { alert(err.message) }
+    await run(async () => {
+      await adminAddVolunteer(checkInEventId, userId, displayName)
+      setVolunteerSearch('')
+      setShowAddVolunteer(false)
+      await refreshSignups()
+      await loadData()
+    }, { successMessage: 'Added to event', errorMessage: 'Could not add' })
   }
 
   async function handleCreateNewWalkIn(e) {
     e.preventDefault()
-    if (!newWalkInForm.displayName.trim()) { alert('Name is required'); return }
-    try {
+    if (!newWalkInForm.displayName.trim()) { toast.error('Name is required'); return }
+    await run(async () => {
       await createWalkInVolunteer(checkInEventId, newWalkInForm)
       setNewWalkInForm({ displayName: '', email: '', phone: '' })
       setShowNewWalkIn(false)
       await refreshSignups()
       await loadData()
-    } catch (err) {
-      alert(err.message || 'Failed to add walk-in')
-    }
+    }, { successMessage: 'Walk-in added', errorMessage: 'Could not create walk-in' })
   }
 
   function setManualHours(signupId, value) { setManualHoursMap((prev) => ({ ...prev, [signupId]: value })) }
@@ -180,19 +212,21 @@ export default function AdminDashboard() {
   }
 
   async function handleAssignVolunteer(eventId, userId, displayName) {
-    try {
+    await run(async () => {
       await signUpForEvent(eventId, userId, displayName)
       const signups = await getEventSignups(eventId)
       setAssignSignups(signups)
       await loadData()
-    } catch (err) { alert(err.message) }
+    }, { successMessage: 'Assigned', errorMessage: 'Could not assign' })
   }
 
   async function handleRemoveFromEvent(signupId, eventId) {
-    await cancelSignup(signupId, eventId)
-    const signups = await getEventSignups(eventId)
-    setAssignSignups(signups)
-    await loadData()
+    await run(async () => {
+      await cancelSignup(signupId, eventId)
+      const signups = await getEventSignups(eventId)
+      setAssignSignups(signups)
+      await loadData()
+    }, { successMessage: 'Removed from event', errorMessage: 'Could not remove' })
   }
 
   const tabs = [
@@ -369,7 +403,16 @@ export default function AdminDashboard() {
           </div>
 
           {showVolunteerForm && (
-            <form onSubmit={async (e) => { e.preventDefault(); if (!volunteerForm.displayName.trim()) return alert('Name is required'); try { await createManagedVolunteer(volunteerForm); setVolunteerForm({ displayName: '', email: '', phone: '' }); setShowVolunteerForm(false); await loadData() } catch (err) { alert('Failed to create volunteer') } }} className="card space-y-4">
+            <form onSubmit={async (e) => {
+              e.preventDefault()
+              if (!volunteerForm.displayName.trim()) { toast.error('Name is required'); return }
+              await run(async () => {
+                await createManagedVolunteer(volunteerForm)
+                setVolunteerForm({ displayName: '', email: '', phone: '' })
+                setShowVolunteerForm(false)
+                await loadData()
+              }, { successMessage: 'Volunteer added', errorMessage: 'Failed to add volunteer' })
+            }} className="card space-y-4">
               <h3 className="font-semibold">Add Volunteer (no account needed)</h3>
               <p className="text-xs text-gray-500">Create a profile for someone who doesn't have or want their own login.</p>
               <div className="grid sm:grid-cols-3 gap-4">
@@ -393,13 +436,19 @@ export default function AdminDashboard() {
                     <td className="px-4 py-3"><select className="input py-1 text-xs w-auto" value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}><option value="volunteer">Volunteer</option><option value="ministry_leader">Ministry Leader</option><option value="admin">Admin</option></select></td>
                     <td className="px-4 py-3 hidden md:table-cell">
                       {u.role === 'ministry_leader' ? (
-                        <select className="input py-1 text-xs w-auto" value={u.assignedDepartment || ''} onChange={async (e) => { await updateVolunteerProfile(u.id, { assignedDepartment: e.target.value || null }); await loadData() }}>
+                        <select className="input py-1 text-xs w-auto" value={u.assignedDepartment || ''} onChange={(e) => run(async () => {
+                          await updateVolunteerProfile(u.id, { assignedDepartment: e.target.value || null })
+                          await loadData()
+                        }, { successMessage: 'Department updated', errorMessage: 'Update failed' })}>
                           <option value="">None</option>
                           {DEPARTMENTS.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
                         </select>
                       ) : (<span className="text-xs text-gray-400">-</span>)}
                     </td>
-                    <td className="px-4 py-3 text-right">{u.managed && (<button onClick={async () => { if (!confirm(`Delete ${u.displayName}?`)) return; await deleteVolunteer(u.id); await loadData() }} className="text-gray-400 hover:text-red-500 p-1" title="Delete volunteer"><Trash2 size={14} /></button>)}</td>
+                    <td className="px-4 py-3 text-right">{u.managed && (<button onClick={() => {
+                      if (!confirm(`Delete ${u.displayName}?`)) return
+                      run(async () => { await deleteVolunteer(u.id); await loadData() }, { successMessage: 'Volunteer deleted', errorMessage: 'Delete failed' })
+                    }} className="text-gray-400 hover:text-red-500 p-1" title="Delete volunteer"><Trash2 size={14} /></button>)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -547,7 +596,10 @@ export default function AdminDashboard() {
                             })()}
                           </div>
                           {(signup.status === 'signed_up' || signup.status === 'checked_in') && (
-                            <select className="input py-1 text-xs w-auto" value={signup.department || ''} onChange={async (e) => { await assignDepartment(signup.id, e.target.value); await refreshSignups() }}>
+                            <select className="input py-1 text-xs w-auto" value={signup.department || ''} onChange={(e) => run(async () => {
+                              await assignDepartment(signup.id, e.target.value)
+                              await refreshSignups()
+                            }, { successMessage: 'Department set', errorMessage: 'Could not set department' })}>
                               <option value="">Assign dept...</option>
                               {DEPARTMENTS.map((d) => (<option key={d.id} value={d.id}>{d.icon} {d.name}</option>))}
                             </select>
