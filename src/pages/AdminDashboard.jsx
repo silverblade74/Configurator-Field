@@ -145,24 +145,40 @@ export default function AdminDashboard() {
 
   async function handleBulkCheckIn() {
     setBulkLoading(true)
-    for (const s of eventSignups) {
-      if (getOpenSession(s)) continue
-      if (s.status === 'released' || s.status === 'no_show') continue
-      await checkIn(s.id)
+    let failed = 0
+    try {
+      for (const s of eventSignups) {
+        if (getOpenSession(s)) continue
+        if (s.status === 'released' || s.status === 'no_show') continue
+        try { await checkIn(s.id) } catch (err) { failed++ }
+      }
+      await refreshSignups()
+      if (failed > 0) toast.error(`${failed} bulk check-in${failed === 1 ? '' : 's'} failed`)
+      else toast.success('Bulk check-in complete')
+    } finally {
+      setBulkLoading(false)
     }
-    await refreshSignups(); setBulkLoading(false)
   }
 
   async function handleBulkCheckOut() {
     if (!confirm('Check out all checked-in volunteers?')) return
     setBulkLoading(true)
-    for (const s of eventSignups) {
-      if (!getOpenSession(s)) continue
-      const manual = manualHoursMap[s.id]
-      const hours = manual !== undefined && manual !== '' ? Number(manual) : null
-      await checkOut(s.id, s.userId, hours)
+    let failed = 0
+    try {
+      for (const s of eventSignups) {
+        if (!getOpenSession(s)) continue
+        const manual = manualHoursMap[s.id]
+        const hours = manual !== undefined && manual !== '' ? Number(manual) : null
+        try { await checkOut(s.id, s.userId, hours) } catch (err) { failed++ }
+      }
+      setManualHoursMap({})
+      await refreshSignups()
+      await loadData()
+      if (failed > 0) toast.error(`${failed} bulk check-out${failed === 1 ? '' : 's'} failed`)
+      else toast.success('Bulk check-out complete')
+    } finally {
+      setBulkLoading(false)
     }
-    setManualHoursMap({}); await refreshSignups(); setBulkLoading(false); await loadData()
   }
 
   async function handleAddWalkIn(userId, displayName) {

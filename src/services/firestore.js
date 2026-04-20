@@ -117,9 +117,16 @@ export async function adminAddVolunteer(eventId, userId, userName) {
 }
 
 export async function releaseVolunteer(signupId) {
-  return updateDoc(doc(db, 'eventSignups', signupId), {
-    status: 'released', checkedOutAt: serverTimestamp(), hoursLogged: 0,
-  })
+  const ref = doc(db, 'eventSignups', signupId)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) throw new Error('Signup not found')
+  const data = snap.data()
+  // If a session is open, close it first (preserves hours) via clock.
+  const open = getOpenSession({ ...data, id: snap.id })
+  if (open && data.userId) {
+    await endSession(signupId, data.userId)
+  }
+  return updateDoc(ref, { status: 'released' })
 }
 
 export async function markNoShow(signupId) {
@@ -212,7 +219,20 @@ export async function endSession(signupId, userId, { manualHours = null } = {}) 
   if (!snap.exists()) throw new Error('Signup not found')
   const data = snap.data()
 
-  const sessions = Array.isArray(data.sessions) ? [...data.sessions] : []
+  let sessions
+  if (Array.isArray(data.sessions) && data.sessions.length > 0) {
+    sessions = [...data.sessions]
+  } else if (data.checkedInAt && !data.checkedOutAt) {
+    // Legacy doc: synthesize a single open session so we can close it normally.
+    sessions = [{
+      checkInAt: data.checkedInAt,
+      checkOutAt: null,
+      hoursLogged: 0,
+      department: data.department || null,
+    }]
+  } else {
+    sessions = []
+  }
   const idx = sessions.length - 1
   const open = idx >= 0 ? sessions[idx] : null
   if (!open || open.checkOutAt) throw new Error('No open session to close')
