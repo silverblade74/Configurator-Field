@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useMinistries } from '../contexts/MinistriesContext'
 import {
-  getAllUsers, getEvents, getMinistries, getServiceHoursSummary,
+  getAllUsers, getEvents, getServiceHoursSummary,
   createEvent, createMinistry, updateEvent, deleteEvent,
   updateMinistry, deleteMinistry, updateUserRole, getEventSignups,
   signUpForEvent, cancelSignup,
@@ -26,7 +27,7 @@ export default function AdminDashboard() {
   const [tab, setTab] = useState('overview')
   const [users, setUsers] = useState([])
   const [events, setEvents] = useState([])
-  const [ministries, setMinistries] = useState([])
+  const { ministries, refresh: refreshMinistries } = useMinistries()
   const [serviceHours, setServiceHours] = useState([])
   const [loading, setLoading] = useState(true)
   const [showEventForm, setShowEventForm] = useState(false)
@@ -60,10 +61,10 @@ export default function AdminDashboard() {
 
   async function loadData() {
     try {
-      const [usersData, eventsData, ministriesData, hoursData] = await Promise.all([
-        getAllUsers(), getEvents(), getMinistries(), getServiceHoursSummary(),
+      const [usersData, eventsData, hoursData] = await Promise.all([
+        getAllUsers(), getEvents(), getServiceHoursSummary(),
       ])
-      setUsers(usersData); setEvents(eventsData); setMinistries(ministriesData); setServiceHours(hoursData)
+      setUsers(usersData); setEvents(eventsData); setServiceHours(hoursData)
     } catch (err) { console.error('Error loading admin data:', err) }
     setLoading(false)
   }
@@ -94,12 +95,13 @@ export default function AdminDashboard() {
       setShowMinistryForm(false)
       setMinistryForm({ name: '', description: '', leaderName: '', contactEmail: '' })
       await loadData()
+      await refreshMinistries()
     }, { successMessage: 'Ministry created', errorMessage: 'Failed to create ministry' })
   }
 
   async function handleDeleteMinistry(id) {
     if (!confirm('Delete this ministry?')) return
-    await run(async () => { await deleteMinistry(id); await loadData() }, { successMessage: 'Ministry deleted', errorMessage: 'Failed to delete ministry' })
+    await run(async () => { await deleteMinistry(id); await loadData(); await refreshMinistries() }, { successMessage: 'Ministry deleted', errorMessage: 'Failed to delete ministry' })
   }
   async function handleRoleChange(userId, newRole) {
     await run(async () => { await updateUserRole(userId, newRole); await loadData() }, { successMessage: 'Role updated', errorMessage: 'Failed to update role' })
