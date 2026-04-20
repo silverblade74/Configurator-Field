@@ -93,7 +93,7 @@ export default function AdminDashboard() {
   async function handleRoleChange(userId, newRole) { await updateUserRole(userId, newRole); await loadData() }
 
   async function openCheckIn(eventId) {
-    setCheckInEventId(eventId); setManualHoursMap({}); setShowAddVolunteer(false); setVolunteerSearch(''); setSignupSearch('')
+    setCheckInEventId(eventId); setManualHoursMap({}); setShowAddVolunteer(false); setVolunteerSearch(''); setSignupSearch(''); setExpandedSignupId(null)
     const signups = await getEventSignups(eventId); setEventSignups(signups)
   }
 
@@ -442,7 +442,7 @@ export default function AdminDashboard() {
                 <div className="flex flex-wrap gap-2">
                   <button onClick={() => { setShowAddVolunteer(!showAddVolunteer); setShowNewWalkIn(false) }} className="btn-secondary text-xs py-1.5 px-3 flex items-center space-x-1"><UserPlus size={12} /><span>Add Walk-In</span></button>
                   <button onClick={() => { setShowNewWalkIn(!showNewWalkIn); setShowAddVolunteer(false) }} className="btn-secondary text-xs py-1.5 px-3 flex items-center space-x-1"><UserPlus size={12} /><span>New Walk-In</span></button>
-                  {eventSignups.some((s) => s.status === 'signed_up') && (
+                  {eventSignups.some((s) => !getOpenSession(s) && s.status !== 'released' && s.status !== 'no_show') && (
                     <button onClick={handleBulkCheckIn} disabled={bulkLoading} className="btn-primary text-xs py-1.5 px-3 flex items-center space-x-1"><UserCheck size={12} /><span>{bulkLoading ? '...' : 'Check All In'}</span></button>
                   )}
                   {eventSignups.some((s) => s.status === 'checked_in') && (
