@@ -7,6 +7,7 @@ import {
   signUpForEvent, cancelSignup,
   checkIn, checkOut, adminAddVolunteer, releaseVolunteer, markNoShow,
   createManagedVolunteer, deleteVolunteer, assignDepartment, updateVolunteerProfile,
+  createWalkInVolunteer, getOpenSession,
 } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
@@ -46,6 +47,8 @@ export default function AdminDashboard() {
   const [volunteerSearch, setVolunteerSearch] = useState('')
   const [signupSearch, setSignupSearch] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [showNewWalkIn, setShowNewWalkIn] = useState(false)
+  const [newWalkInForm, setNewWalkInForm] = useState({ displayName: '', email: '', phone: '' })
 
   useEffect(() => { loadData() }, [])
 
@@ -128,6 +131,20 @@ export default function AdminDashboard() {
   async function handleAddWalkIn(userId, displayName) {
     try { await adminAddVolunteer(checkInEventId, userId, displayName); setVolunteerSearch(''); setShowAddVolunteer(false); await refreshSignups(); await loadData() }
     catch (err) { alert(err.message) }
+  }
+
+  async function handleCreateNewWalkIn(e) {
+    e.preventDefault()
+    if (!newWalkInForm.displayName.trim()) { alert('Name is required'); return }
+    try {
+      await createWalkInVolunteer(checkInEventId, newWalkInForm)
+      setNewWalkInForm({ displayName: '', email: '', phone: '' })
+      setShowNewWalkIn(false)
+      await refreshSignups()
+      await loadData()
+    } catch (err) {
+      alert(err.message || 'Failed to add walk-in')
+    }
   }
 
   function setManualHours(signupId, value) { setManualHoursMap((prev) => ({ ...prev, [signupId]: value })) }
@@ -417,7 +434,8 @@ export default function AdminDashboard() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={() => setShowAddVolunteer(!showAddVolunteer)} className="btn-secondary text-xs py-1.5 px-3 flex items-center space-x-1"><UserPlus size={12} /><span>Add Walk-In</span></button>
+                  <button onClick={() => { setShowAddVolunteer(!showAddVolunteer); setShowNewWalkIn(false) }} className="btn-secondary text-xs py-1.5 px-3 flex items-center space-x-1"><UserPlus size={12} /><span>Add Walk-In</span></button>
+                  <button onClick={() => { setShowNewWalkIn(!showNewWalkIn); setShowAddVolunteer(false) }} className="btn-secondary text-xs py-1.5 px-3 flex items-center space-x-1"><UserPlus size={12} /><span>New Walk-In</span></button>
                   {eventSignups.some((s) => s.status === 'signed_up') && (
                     <button onClick={handleBulkCheckIn} disabled={bulkLoading} className="btn-primary text-xs py-1.5 px-3 flex items-center space-x-1"><UserCheck size={12} /><span>{bulkLoading ? '...' : 'Check All In'}</span></button>
                   )}
@@ -448,6 +466,21 @@ export default function AdminDashboard() {
                     </div>
                   )}
                 </div>
+              )}
+
+              {showNewWalkIn && (
+                <form onSubmit={handleCreateNewWalkIn} className="mb-4 p-3 bg-indigo-50 border border-indigo-200 rounded-lg space-y-3">
+                  <p className="text-sm font-medium text-indigo-800">New walk-in (person not in the system yet)</p>
+                  <div className="grid sm:grid-cols-3 gap-3">
+                    <div><label className="label">Name *</label><input className="input" required value={newWalkInForm.displayName} onChange={(e) => setNewWalkInForm({ ...newWalkInForm, displayName: e.target.value })} placeholder="Jane Smith" /></div>
+                    <div><label className="label">Email (optional)</label><input type="email" className="input" value={newWalkInForm.email} onChange={(e) => setNewWalkInForm({ ...newWalkInForm, email: e.target.value })} placeholder="jane@email.com" /></div>
+                    <div><label className="label">Phone (optional)</label><input type="tel" className="input" value={newWalkInForm.phone} onChange={(e) => setNewWalkInForm({ ...newWalkInForm, phone: e.target.value })} placeholder="(555) 123-4567" /></div>
+                  </div>
+                  <div className="flex space-x-2">
+                    <button type="submit" className="btn-primary text-xs py-1.5 px-3">Create & Check In</button>
+                    <button type="button" onClick={() => { setShowNewWalkIn(false); setNewWalkInForm({ displayName: '', email: '', phone: '' }) }} className="btn-secondary text-xs py-1.5 px-3">Cancel</button>
+                  </div>
+                </form>
               )}
 
               {eventSignups.length > 0 && (
