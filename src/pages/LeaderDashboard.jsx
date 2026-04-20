@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { getAllUsers, getMinistries, getEvents, getEventSignups } from '../services/firestore'
+import { useMinistries } from '../contexts/MinistriesContext'
+import { getAllUsers, getEvents, getEventSignups } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
@@ -12,8 +13,8 @@ import {
 
 export default function LeaderDashboard() {
   const { userProfile } = useAuth()
+  const { ministries } = useMinistries()
   const [users, setUsers] = useState([])
-  const [ministries, setMinistries] = useState([])
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [expandedDept, setExpandedDept] = useState(null)
@@ -25,11 +26,10 @@ export default function LeaderDashboard() {
 
   async function loadData() {
     try {
-      const [usersData, ministriesData, eventsData] = await Promise.all([
-        getAllUsers(), getMinistries(), getEvents(),
+      const [usersData, eventsData] = await Promise.all([
+        getAllUsers(), getEvents(),
       ])
       setUsers(usersData)
-      setMinistries(ministriesData)
       setEvents(eventsData)
 
       const upcoming = eventsData.filter((e) => e.date?.toDate() > new Date()).slice(0, 10)
