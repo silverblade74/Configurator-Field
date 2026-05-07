@@ -15,6 +15,7 @@ import {
   Timestamp,
 } from 'firebase/firestore'
 import { db } from '../firebase'
+import { calculatePoints, getMilestoneBonus } from '../utils/gamification'
 
 // ─── Ministries ──────────────────────────────────────────────
 
@@ -64,6 +65,20 @@ export async function getEvents(filters = {}) {
 export async function getEvent(id) {
   const snapshot = await getDoc(doc(db, 'events', id))
   return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null
+}
+
+export async function getEventsByIds(ids) {
+  if (!ids.length) return []
+  const unique = [...new Set(ids)]
+  const results = {}
+  // Firestore 'in' queries support max 30 items
+  for (let i = 0; i < unique.length; i += 30) {
+    const batch = unique.slice(i, i + 30)
+    const q = query(collection(db, 'events'), where('__name__', 'in', batch))
+    const snapshot = await getDocs(q)
+    snapshot.docs.forEach((d) => { results[d.id] = { id: d.id, ...d.data() } })
+  }
+  return results
 }
 
 export async function createEvent(data) {
@@ -149,6 +164,7 @@ export async function checkIn(signupId) {
 export async function checkOut(signupId, userId, manualHours = null) {
   const signupRef = doc(db, 'eventSignups', signupId)
   const signupSnap = await getDoc(signupRef)
+  if (!signupSnap.exists()) throw new Error('Signup not found')
   const signupData = signupSnap.data()
 
   let hoursLogged
@@ -179,9 +195,16 @@ export async function checkOut(signupId, userId, manualHours = null) {
     createdAt: serverTimestamp(),
   })
 
-  // Update user hours and points
-  const pointsEarned = Math.floor(hoursLogged * 10) // 10 points per hour
-  await updateDoc(doc(db, 'users', userId), {
+  // Calculate points using gamification engine
+  const userRef = doc(db, 'users', userId)
+  const userSnap = await getDoc(userRef)
+  const userData = userSnap.exists() ? userSnap.data() : {}
+  const oldHours = userData.totalHours || 0
+  const isFirstEvent = oldHours === 0
+  let pointsEarned = calculatePoints(hoursLogged, isFirstEvent)
+  pointsEarned += getMilestoneBonus(oldHours, oldHours + hoursLogged)
+
+  await updateDoc(userRef, {
     totalHours: increment(hoursLogged),
     totalPoints: increment(pointsEarned),
     lastServedDate: serverTimestamp(),
@@ -384,6 +407,7 @@ export async function getAttendanceLogs(filters = {}) {
 }
 
 export async function getServiceHoursSummary() {
-  const snapshot = await getDocs(collection(db, 'serviceHours'))
+  const q = query(collection(db, 'serviceHours'), orderBy('date', 'desc'), limit(500))
+  const snapshot = await getDocs(q)
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
 }

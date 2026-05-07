@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getUserSignups, getEvent, BADGE_DEFINITIONS, MILESTONES } from '../services/firestore'
+import { getUserSignups, getEventsByIds, BADGE_DEFINITIONS } from '../services/firestore'
 import { formatHours, getLevel, getNextMilestone } from '../utils/gamification'
 import StatCard from '../components/StatCard'
+import ErrorState from '../components/ErrorState'
 import { Clock, Trophy, Flame, Star, Calendar, ArrowRight } from 'lucide-react'
 
 export default function VolunteerDashboard() {
@@ -11,20 +12,21 @@ export default function VolunteerDashboard() {
   const [upcomingEvents, setUpcomingEvents] = useState([])
   const [recentActivity, setRecentActivity] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     async function loadData() {
       if (!userProfile) return
       try {
-        const signups = await getUserSignups(userProfile.uid)
+        const signups = await getUserSignups(userProfile.uid || userProfile.id)
 
-        // Load event details for each signup
-        const eventsWithDetails = await Promise.all(
-          signups.map(async (signup) => {
-            const event = await getEvent(signup.eventId)
-            return { ...signup, event }
-          })
-        )
+        // Batch fetch all events in 1-2 queries instead of N
+        const eventIds = [...new Set(signups.map((s) => s.eventId).filter(Boolean))]
+        const eventsMap = await getEventsByIds(eventIds)
+        const eventsWithDetails = signups.map((signup) => ({
+          ...signup,
+          event: eventsMap[signup.eventId] || null,
+        }))
 
         const now = new Date()
         const upcoming = eventsWithDetails
@@ -41,6 +43,7 @@ export default function VolunteerDashboard() {
         setRecentActivity(recent)
       } catch (err) {
         console.error('Error loading dashboard:', err)
+        setError(err.message)
       }
       setLoading(false)
     }
@@ -53,6 +56,10 @@ export default function VolunteerDashboard() {
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
       </div>
     )
+  }
+
+  if (error) {
+    return <ErrorState message={error} onRetry={() => window.location.reload()} />
   }
 
   const level = getLevel(userProfile?.totalPoints || 0)

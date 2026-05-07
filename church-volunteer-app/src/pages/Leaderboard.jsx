@@ -82,7 +82,7 @@ export default function Leaderboard() {
         <>
           {/* Top 3 Podium */}
           {sorted.length >= 3 && (
-            <div className="grid grid-cols-3 gap-4">
+            <div className="hidden sm:grid grid-cols-3 gap-4">
               {[sorted[1], sorted[0], sorted[2]].map((user, idx) => {
                 const rank = idx === 0 ? 2 : idx === 1 ? 1 : 3
                 const level = getLevel(user?.totalPoints || 0)
@@ -111,7 +111,7 @@ export default function Leaderboard() {
           )}
 
           {/* Full List */}
-          <div className="card overflow-hidden p-0">
+          <div className="card overflow-x-auto p-0">
             <table className="w-full">
               <thead className="bg-gray-50 border-b">
                 <tr>

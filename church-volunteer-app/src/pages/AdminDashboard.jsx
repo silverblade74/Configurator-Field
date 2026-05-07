@@ -7,9 +7,7 @@ import {
   getServiceHoursSummary,
   createEvent,
   createMinistry,
-  updateEvent,
   deleteEvent,
-  updateMinistry,
   deleteMinistry,
   updateUserRole,
   getEventSignups,
@@ -29,8 +27,8 @@ import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
 import {
-  Users, Calendar, Clock, Award, Plus, Trash2, Edit3,
-  ChevronDown, ChevronUp, UserCheck, UserX, BarChart3,
+  Users, Calendar, Clock, Award, Plus, Trash2,
+  UserCheck, UserX, BarChart3,
   Search, MinusCircle, XCircle, UserPlus,
 } from 'lucide-react'
 import { Timestamp } from 'firebase/firestore'

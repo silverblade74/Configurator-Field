@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { sendPasswordResetEmail } from 'firebase/auth'
+import { auth } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Login() {
@@ -73,6 +75,24 @@ export default function Login() {
                 required
                 placeholder="Enter your password"
               />
+            </div>
+            <div className="text-right">
+              <button
+                type="button"
+                className="text-sm text-primary-600 hover:underline"
+                onClick={async () => {
+                  if (!email) return setError('Enter your email first, then click Forgot Password.')
+                  try {
+                    await sendPasswordResetEmail(auth, email)
+                    setError('')
+                    alert('Password reset email sent! Check your inbox.')
+                  } catch (err) {
+                    setError('Could not send reset email. Check the address and try again.')
+                  }
+                }}
+              >
+                Forgot password?
+              </button>
             </div>
             <button type="submit" className="btn-primary w-full" disabled={loading}>
               {loading ? 'Signing in...' : 'Sign In'}
