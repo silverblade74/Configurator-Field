@@ -3,8 +3,7 @@ import {
   query, where, orderBy, limit, serverTimestamp, increment, Timestamp,
 } from 'firebase/firestore'
 import { db } from '../firebase'
-
-// --- Ministries ---
+import { calculatePoints, getMilestoneBonus } from '../utils/gamification'
 
 export async function getMinistries() {
   const q = query(collection(db, 'ministries'), orderBy('name'))
@@ -20,11 +19,7 @@ export async function updateMinistry(id, data) {
   return updateDoc(doc(db, 'ministries', id), { ...data, updatedAt: serverTimestamp() })
 }
 
-export async function deleteMinistry(id) {
-  return deleteDoc(doc(db, 'ministries', id))
-}
-
-// --- Events ---
+export async function deleteMinistry(id) { return deleteDoc(doc(db, 'ministries', id)) }
 
 export async function getEvents(filters = {}) {
   let q = collection(db, 'events')
@@ -41,6 +36,19 @@ export async function getEvent(id) {
   return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null
 }
 
+export async function getEventsByIds(ids) {
+  if (!ids.length) return {}
+  const unique = [...new Set(ids)]
+  const results = {}
+  for (let i = 0; i < unique.length; i += 30) {
+    const batch = unique.slice(i, i + 30)
+    const q = query(collection(db, 'events'), where('__name__', 'in', batch))
+    const snapshot = await getDocs(q)
+    snapshot.docs.forEach((d) => { results[d.id] = { id: d.id, ...d.data() } })
+  }
+  return results
+}
+
 export async function createEvent(data) {
   return addDoc(collection(db, 'events'), { ...data, signupCount: 0, createdAt: serverTimestamp() })
 }
@@ -49,20 +57,15 @@ export async function updateEvent(id, data) {
   return updateDoc(doc(db, 'events', id), { ...data, updatedAt: serverTimestamp() })
 }
 
-export async function deleteEvent(id) {
-  return deleteDoc(doc(db, 'events', id))
-}
-
-// --- Event Signups ---
+export async function deleteEvent(id) { return deleteDoc(doc(db, 'events', id)) }
 
 export async function signUpForEvent(eventId, userId, userName) {
   const existing = query(collection(db, 'eventSignups'), where('eventId', '==', eventId), where('userId', '==', userId))
   const snapshot = await getDocs(existing)
   if (!snapshot.empty) throw new Error('Already signed up')
-
   await addDoc(collection(db, 'eventSignups'), {
-    eventId, userId, userName, status: 'signed_up',
-    checkedInAt: null, checkedOutAt: null, hoursLogged: 0, department: null, createdAt: serverTimestamp(),
+    eventId, userId, userName, status: 'signed_up', department: null,
+    checkedInAt: null, checkedOutAt: null, hoursLogged: 0, createdAt: serverTimestamp(),
   })
   await updateDoc(doc(db, 'events', eventId), { signupCount: increment(1) })
 }
@@ -84,8 +87,6 @@ export async function getUserSignups(userId) {
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
-// --- Check-in / Check-out ---
-
 export async function checkIn(signupId) {
   return updateDoc(doc(db, 'eventSignups', signupId), { status: 'checked_in', checkedInAt: serverTimestamp() })
 }
@@ -93,6 +94,7 @@ export async function checkIn(signupId) {
 export async function checkOut(signupId, userId, manualHours = null) {
   const signupRef = doc(db, 'eventSignups', signupId)
   const signupSnap = await getDoc(signupRef)
+  if (!signupSnap.exists()) throw new Error('Signup not found')
   const signupData = signupSnap.data()
 
   let hoursLogged
@@ -112,8 +114,15 @@ export async function checkOut(signupId, userId, manualHours = null) {
     hoursLogged, department: signupData.department || null, createdAt: serverTimestamp(),
   })
 
-  const pointsEarned = Math.floor(hoursLogged * 10)
-  await updateDoc(doc(db, 'users', userId), {
+  const userRef = doc(db, 'users', userId)
+  const userSnap = await getDoc(userRef)
+  const userData = userSnap.exists() ? userSnap.data() : {}
+  const oldHours = userData.totalHours || 0
+  const isFirstEvent = oldHours === 0
+  let pointsEarned = calculatePoints(hoursLogged, isFirstEvent)
+  pointsEarned += getMilestoneBonus(oldHours, oldHours + hoursLogged)
+
+  await updateDoc(userRef, {
     totalHours: increment(hoursLogged), totalPoints: increment(pointsEarned),
     lastServedDate: serverTimestamp(), updatedAt: serverTimestamp(),
   })
@@ -130,32 +139,25 @@ export async function adminAddVolunteer(eventId, userId, userName) {
   const existing = query(collection(db, 'eventSignups'), where('eventId', '==', eventId), where('userId', '==', userId))
   const snapshot = await getDocs(existing)
   if (!snapshot.empty) throw new Error('Already added')
-
   const ref = await addDoc(collection(db, 'eventSignups'), {
-    eventId, userId, userName, status: 'checked_in',
-    checkedInAt: serverTimestamp(), checkedOutAt: null, hoursLogged: 0,
-    department: null, createdAt: serverTimestamp(),
+    eventId, userId, userName, status: 'checked_in', department: null,
+    checkedInAt: serverTimestamp(), checkedOutAt: null, hoursLogged: 0, createdAt: serverTimestamp(),
   })
   await updateDoc(doc(db, 'events', eventId), { signupCount: increment(1) })
   return ref
 }
 
 export async function releaseVolunteer(signupId) {
-  return updateDoc(doc(db, 'eventSignups', signupId), {
-    status: 'released', checkedOutAt: serverTimestamp(), hoursLogged: 0,
-  })
+  return updateDoc(doc(db, 'eventSignups', signupId), { status: 'released', checkedOutAt: serverTimestamp(), hoursLogged: 0 })
 }
 
 export async function markNoShow(signupId) {
   return updateDoc(doc(db, 'eventSignups', signupId), { status: 'no_show' })
 }
 
-// Assign a volunteer to a department for this specific event
 export async function assignDepartment(signupId, department) {
   return updateDoc(doc(db, 'eventSignups', signupId), { department: department || null })
 }
-
-// --- Leaderboard ---
 
 export async function getLeaderboard(limitCount = 20) {
   const q = query(collection(db, 'users'), where('role', '==', 'volunteer'), orderBy('totalPoints', 'desc'), limit(limitCount))
@@ -163,18 +165,16 @@ export async function getLeaderboard(limitCount = 20) {
   return snapshot.docs.map((d, i) => ({ id: d.id, rank: i + 1, ...d.data() }))
 }
 
-// --- Badges & Milestones ---
-
 export const BADGE_DEFINITIONS = [
-  { id: 'first_event', name: 'First Step', description: 'Attended your first event', icon: '\u2B50', condition: (user) => user.totalHours > 0 },
-  { id: 'hours_10', name: 'Dedicated', description: 'Served 10+ hours', icon: '\uD83D\uDD50', condition: (user) => user.totalHours >= 10 },
-  { id: 'hours_50', name: 'Committed', description: 'Served 50+ hours', icon: '\uD83D\uDD25', condition: (user) => user.totalHours >= 50 },
-  { id: 'hours_100', name: 'Champion', description: 'Served 100+ hours', icon: '\uD83C\uDFC6', condition: (user) => user.totalHours >= 100 },
-  { id: 'hours_250', name: 'Legend', description: 'Served 250+ hours', icon: '\uD83D\uDC51', condition: (user) => user.totalHours >= 250 },
-  { id: 'streak_4', name: 'Consistent', description: '4-week serving streak', icon: '\uD83D\uDCC5', condition: (user) => user.streak >= 4 },
-  { id: 'streak_12', name: 'Faithful', description: '12-week serving streak', icon: '\uD83D\uDC8E', condition: (user) => user.streak >= 12 },
-  { id: 'points_500', name: 'Rising Star', description: 'Earned 500+ points', icon: '\uD83C\uDF1F', condition: (user) => user.totalPoints >= 500 },
-  { id: 'points_2000', name: 'All Star', description: 'Earned 2000+ points', icon: '\u2728', condition: (user) => user.totalPoints >= 2000 },
+  { id: 'first_event', name: 'First Step', description: 'Attended your first event', icon: '⭐', condition: (user) => user.totalHours > 0 },
+  { id: 'hours_10', name: 'Dedicated', description: 'Served 10+ hours', icon: '🕐', condition: (user) => user.totalHours >= 10 },
+  { id: 'hours_50', name: 'Committed', description: 'Served 50+ hours', icon: '🔥', condition: (user) => user.totalHours >= 50 },
+  { id: 'hours_100', name: 'Champion', description: 'Served 100+ hours', icon: '🏆', condition: (user) => user.totalHours >= 100 },
+  { id: 'hours_250', name: 'Legend', description: 'Served 250+ hours', icon: '👑', condition: (user) => user.totalHours >= 250 },
+  { id: 'streak_4', name: 'Consistent', description: '4-week serving streak', icon: '📅', condition: (user) => user.streak >= 4 },
+  { id: 'streak_12', name: 'Faithful', description: '12-week serving streak', icon: '💎', condition: (user) => user.streak >= 12 },
+  { id: 'points_500', name: 'Rising Star', description: 'Earned 500+ points', icon: '🌟', condition: (user) => user.totalPoints >= 500 },
+  { id: 'points_2000', name: 'All Star', description: 'Earned 2000+ points', icon: '✨', condition: (user) => user.totalPoints >= 2000 },
 ]
 
 export const MILESTONES = [
@@ -193,21 +193,14 @@ export async function checkAndAwardBadges(userId) {
   const userData = userSnap.data()
   const currentBadges = userData.badges || []
   const newBadges = []
-
   for (const badge of BADGE_DEFINITIONS) {
-    if (!currentBadges.includes(badge.id) && badge.condition(userData)) {
-      newBadges.push(badge.id)
-    }
+    if (!currentBadges.includes(badge.id) && badge.condition(userData)) newBadges.push(badge.id)
   }
-
   if (newBadges.length > 0) {
     await updateDoc(userRef, { badges: [...currentBadges, ...newBadges], updatedAt: serverTimestamp() })
   }
-
   return newBadges.map((id) => BADGE_DEFINITIONS.find((b) => b.id === id))
 }
-
-// --- Users (Admin) ---
 
 export async function getAllUsers() {
   const q = query(collection(db, 'users'), orderBy('displayName'))
@@ -224,42 +217,20 @@ export async function getUserProfile(userId) {
   return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null
 }
 
-// Create a managed volunteer (no Firebase Auth account needed)
-export async function createManagedVolunteer({ displayName, email, phone, requestedMinistryIds = [] }, adminUid) {
-  const ref = await addDoc(collection(db, 'users'), {
-    uid: null,
-    email: email || '',
-    displayName: displayName || '',
-    photoURL: '',
-    phone: phone || '',
-    role: 'volunteer',
-    managed: true,
-    ministries: [],
-    requestedMinistryIds,
-    totalHours: 0,
-    totalPoints: 0,
-    badges: [],
-    streak: 0,
-    lastServedDate: null,
-    approvalStatus: 'approved',
-    approvedBy: adminUid || null,
-    approvedAt: serverTimestamp(),
-    approvalNote: '',
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+export async function createManagedVolunteer({ displayName, email, phone }) {
+  return addDoc(collection(db, 'users'), {
+    uid: null, email: email || '', displayName: displayName || '', photoURL: '',
+    phone: phone || '', role: 'volunteer', managed: true, ministries: [],
+    totalHours: 0, totalPoints: 0, badges: [], streak: 0,
+    lastServedDate: null, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   })
-  return ref
 }
 
 export async function updateVolunteerProfile(userId, data) {
   return updateDoc(doc(db, 'users', userId), { ...data, updatedAt: serverTimestamp() })
 }
 
-export async function deleteVolunteer(userId) {
-  return deleteDoc(doc(db, 'users', userId))
-}
-
-// --- Reports ---
+export async function deleteVolunteer(userId) { return deleteDoc(doc(db, 'users', userId)) }
 
 export async function getAttendanceLogs(filters = {}) {
   let constraints = [orderBy('createdAt', 'desc')]
@@ -271,48 +242,7 @@ export async function getAttendanceLogs(filters = {}) {
 }
 
 export async function getServiceHoursSummary() {
-  const snapshot = await getDocs(collection(db, 'serviceHours'))
+  const q = query(collection(db, 'serviceHours'), orderBy('date', 'desc'), limit(500))
+  const snapshot = await getDocs(q)
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
-}
-
-export async function getPendingUsersForReviewer(reviewerProfile) {
-  const q = query(
-    collection(db, 'users'),
-    where('approvalStatus', '==', 'pending')
-  )
-  const snap = await getDocs(q)
-  const users = snap.docs
-    .map((d) => ({ id: d.id, ...d.data() }))
-    .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0))
-
-  if (reviewerProfile?.role === 'admin') return users
-
-  const reviewerMinistries = reviewerProfile?.ministries || []
-  if (reviewerProfile?.role !== 'ministry_leader' || reviewerMinistries.length === 0) {
-    return []
-  }
-
-  return users.filter((u) =>
-    (u.requestedMinistryIds || []).some((id) => reviewerMinistries.includes(id))
-  )
-}
-
-export async function approveUser(userId, reviewerUid) {
-  return updateDoc(doc(db, 'users', userId), {
-    approvalStatus: 'approved',
-    approvedBy: reviewerUid,
-    approvedAt: serverTimestamp(),
-    approvalNote: '',
-    updatedAt: serverTimestamp(),
-  })
-}
-
-export async function rejectUser(userId, reviewerUid, approvalNote = '') {
-  return updateDoc(doc(db, 'users', userId), {
-    approvalStatus: 'rejected',
-    approvedBy: reviewerUid,
-    approvedAt: serverTimestamp(),
-    approvalNote,
-    updatedAt: serverTimestamp(),
-  })
 }
