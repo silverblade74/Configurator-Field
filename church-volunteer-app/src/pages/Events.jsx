@@ -8,6 +8,7 @@ import {
   getUserSignups,
   cancelSignup,
 } from '../services/firestore'
+import { DEPARTMENTS } from '../utils/departments'
 import EmptyState from '../components/EmptyState'
 import SearchBar from '../components/SearchBar'
 import { Calendar, MapPin, Users, Clock, Check, X } from 'lucide-react'
@@ -23,6 +24,7 @@ export default function Events() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [signupDept, setSignupDept] = useState({}) // eventId -> department
 
   useEffect(() => {
     loadData()
@@ -47,8 +49,11 @@ export default function Events() {
   async function handleSignUp(eventId) {
     setActionLoading(eventId)
     try {
-      await signUpForEvent(eventId, userProfile.uid, userProfile.displayName)
+      const dept = signupDept[eventId] || null
+      await signUpForEvent(eventId, userProfile.uid, userProfile.displayName, dept)
+      setSignupDept((prev) => { const n = { ...prev }; delete n[eventId]; return n })
       await loadData()
+      toast.success('Signed up successfully')
     } catch (err) {
       toast.error(err.message)
     }
@@ -189,7 +194,7 @@ export default function Events() {
                 </div>
 
                 {!isPast && (
-                  <div className="mt-4">
+                  <div className="mt-4 space-y-2">
                     {signed ? (
                       <button
                         onClick={() => handleCancel(event.id)}
@@ -200,13 +205,25 @@ export default function Events() {
                         <span>{actionLoading === event.id ? 'Cancelling...' : 'Cancel Signup'}</span>
                       </button>
                     ) : (
-                      <button
-                        onClick={() => handleSignUp(event.id)}
-                        disabled={actionLoading === event.id || (event.maxVolunteers && event.signupCount >= event.maxVolunteers)}
-                        className="btn-primary w-full"
-                      >
-                        {actionLoading === event.id ? 'Signing up...' : 'Sign Up'}
-                      </button>
+                      <>
+                        <select
+                          className="input text-sm"
+                          value={signupDept[event.id] || ''}
+                          onChange={(e) => setSignupDept((prev) => ({ ...prev, [event.id]: e.target.value }))}
+                        >
+                          <option value="">Select department (optional)</option>
+                          {DEPARTMENTS.map((d) => (
+                            <option key={d.id} value={d.id}>{d.icon} {d.name}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => handleSignUp(event.id)}
+                          disabled={actionLoading === event.id || (event.maxVolunteers && event.signupCount >= event.maxVolunteers)}
+                          className="btn-primary w-full"
+                        >
+                          {actionLoading === event.id ? 'Signing up...' : 'Sign Up'}
+                        </button>
+                      </>
                     )}
                   </div>
                 )}

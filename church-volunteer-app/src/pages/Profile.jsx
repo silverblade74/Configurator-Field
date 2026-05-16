@@ -3,9 +3,21 @@ import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/ToastProvider'
+import { updateVolunteerProfile } from '../services/firestore'
+import { DEPARTMENTS } from '../utils/departments'
 import { formatHours, getLevel } from '../utils/gamification'
-import { User, Mail, Phone, Clock, Star, Award } from 'lucide-react'
+import { User, Mail, Phone, Clock, Star, Award, Briefcase, CalendarDays } from 'lucide-react'
 import AvatarUpload from '../components/AvatarUpload'
+
+const DAYS_OF_WEEK = [
+  { id: 'mon', label: 'Mon' },
+  { id: 'tue', label: 'Tue' },
+  { id: 'wed', label: 'Wed' },
+  { id: 'thu', label: 'Thu' },
+  { id: 'fri', label: 'Fri' },
+  { id: 'sat', label: 'Sat' },
+  { id: 'sun', label: 'Sun' },
+]
 
 export default function Profile() {
   const toast = useToast()
@@ -13,18 +25,32 @@ export default function Profile() {
   const [editing, setEditing] = useState(false)
   const [displayName, setDisplayName] = useState(userProfile?.displayName || '')
   const [phone, setPhone] = useState(userProfile?.phone || '')
+  const [departmentPreference, setDepartmentPreference] = useState(userProfile?.departmentPreference || '')
+  const [weeklyAvailability, setWeeklyAvailability] = useState(userProfile?.weeklyAvailability || [])
   const [saving, setSaving] = useState(false)
+
+  function toggleAvailability(dayId) {
+    setWeeklyAvailability((prev) =>
+      prev.includes(dayId) ? prev.filter((d) => d !== dayId) : [...prev, dayId]
+    )
+  }
 
   async function handleSave() {
     setSaving(true)
     try {
-      await updateDoc(doc(db, 'users', currentUser.uid), {
+      const updates = {
         displayName,
         phone,
+        departmentPreference: departmentPreference || null,
+        weeklyAvailability,
+      }
+      await updateDoc(doc(db, 'users', currentUser.uid), {
+        ...updates,
         updatedAt: serverTimestamp(),
       })
-      setUserProfile((prev) => ({ ...prev, displayName, phone }))
+      setUserProfile((prev) => ({ ...prev, ...updates }))
       setEditing(false)
+      toast.success('Profile updated')
     } catch (err) {
       toast.error('Failed to update profile')
     }
