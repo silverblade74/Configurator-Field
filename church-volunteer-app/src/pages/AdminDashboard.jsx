@@ -574,7 +574,7 @@ export default function AdminDashboard() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="font-semibold text-lg">Manage Events</h2>
-            <button onClick={() => setShowEventForm(!showEventForm)} className="btn-primary flex items-center space-x-1">
+            <button onClick={() => { cancelEventForm(); setShowEventForm(!showEventForm) }} className="btn-primary flex items-center space-x-1">
               <Plus size={16} />
               <span>New Event</span>
             </button>
@@ -582,18 +582,67 @@ export default function AdminDashboard() {
 
           {showEventForm && (
             <form onSubmit={handleSubmitEvent} className="card space-y-4">
-              <h3 className="font-semibold">Create Event</h3>
+              <h3 className="font-semibold">{editingEvent ? 'Edit Event' : 'Create Event'}</h3>
+
+              {!editingEvent && (
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isRecurring}
+                      onChange={(e) => setIsRecurring(e.target.checked)}
+                      className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <Repeat size={14} />
+                    <span>Recurring Event</span>
+                  </label>
+                </div>
+              )}
+
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Title *</label>
                   <input className="input" required value={eventForm.title}
                     onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })} />
                 </div>
-                <div>
-                  <label className="label">Date & Time *</label>
-                  <input type="datetime-local" className="input" required value={eventForm.date}
-                    onChange={(e) => setEventForm({ ...eventForm, date: e.target.value })} />
-                </div>
+                {!isRecurring && (
+                  <div>
+                    <label className="label">Date & Time *</label>
+                    <input type="datetime-local" className="input" required value={eventForm.date}
+                      onChange={(e) => setEventForm({ ...eventForm, date: e.target.value })} />
+                  </div>
+                )}
+                {isRecurring && (
+                  <>
+                    <div>
+                      <label className="label">Recurrence *</label>
+                      <select className="input" value={recurringForm.recurrenceType}
+                        onChange={(e) => setRecurringForm({ ...recurringForm, recurrenceType: e.target.value })}>
+                        <option value="weekly">Weekly</option>
+                        <option value="biweekly">Biweekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Day of Week *</label>
+                      <select className="input" value={recurringForm.dayOfWeek}
+                        onChange={(e) => setRecurringForm({ ...recurringForm, dayOfWeek: e.target.value })}>
+                        <option value={0}>Sunday</option>
+                        <option value={1}>Monday</option>
+                        <option value={2}>Tuesday</option>
+                        <option value={3}>Wednesday</option>
+                        <option value={4}>Thursday</option>
+                        <option value={5}>Friday</option>
+                        <option value={6}>Saturday</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Time *</label>
+                      <input type="time" className="input" required value={recurringForm.time}
+                        onChange={(e) => setRecurringForm({ ...recurringForm, time: e.target.value })} />
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="label">Location</label>
                   <input className="input" value={eventForm.location}
@@ -624,10 +673,60 @@ export default function AdminDashboard() {
                   onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })} />
               </div>
               <div className="flex space-x-2">
-                <button type="submit" className="btn-primary">Create Event</button>
-                <button type="button" onClick={() => setShowEventForm(false)} className="btn-secondary">Cancel</button>
+                <button type="submit" className="btn-primary">
+                  {editingEvent ? 'Update Event' : isRecurring ? 'Create Template' : 'Create Event'}
+                </button>
+                <button type="button" onClick={cancelEventForm} className="btn-secondary">Cancel</button>
               </div>
             </form>
+          )}
+
+          {/* Recurring Templates Section */}
+          {templates.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="font-semibold text-sm text-gray-600 flex items-center gap-1">
+                <Repeat size={14} />
+                Recurring Templates
+              </h3>
+              {templates.map((tmpl) => {
+                const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+                return (
+                  <div key={tmpl.id} className="card p-3 bg-purple-50 border border-purple-200">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-sm">{tmpl.title}</p>
+                        <p className="text-xs text-gray-500">
+                          {tmpl.recurrenceType} on {dayNames[tmpl.dayOfWeek]} at {tmpl.time}
+                          {tmpl.ministryId && ` · ${getMinistryName(tmpl.ministryId)}`}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="input py-1 text-xs w-auto"
+                          value={generateRange.templateId === tmpl.id ? generateRange.months : 3}
+                          onChange={(e) => setGenerateRange({ templateId: tmpl.id, months: Number(e.target.value) })}
+                        >
+                          <option value={1}>1 month</option>
+                          <option value={3}>3 months</option>
+                          <option value={6}>6 months</option>
+                          <option value={12}>12 months</option>
+                        </select>
+                        <button
+                          onClick={() => handleGenerateEvents(tmpl.id)}
+                          className="btn-primary text-xs py-1 px-3 flex items-center space-x-1"
+                        >
+                          <Calendar size={12} />
+                          <span>Generate</span>
+                        </button>
+                        <button onClick={() => handleDeleteTemplate(tmpl.id)} className="text-gray-400 hover:text-red-500 p-1">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           )}
 
           <div className="space-y-3">
