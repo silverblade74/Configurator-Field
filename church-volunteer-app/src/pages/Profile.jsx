@@ -94,6 +94,38 @@ export default function Profile() {
                 placeholder="(555) 123-4567"
               />
             </div>
+            <div>
+              <label className="label">Department Preference</label>
+              <select
+                className="input"
+                value={departmentPreference}
+                onChange={(e) => setDepartmentPreference(e.target.value)}
+              >
+                <option value="">No preference</option>
+                {DEPARTMENTS.map((d) => (
+                  <option key={d.id} value={d.id}>{d.icon} {d.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Weekly Availability</label>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {DAYS_OF_WEEK.map((day) => (
+                  <button
+                    key={day.id}
+                    type="button"
+                    onClick={() => toggleAvailability(day.id)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                      weeklyAvailability.includes(day.id)
+                        ? 'bg-primary-100 border-primary-300 text-primary-700'
+                        : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex space-x-2">
               <button onClick={handleSave} className="btn-primary" disabled={saving}>
                 {saving ? 'Saving...' : 'Save'}
@@ -116,6 +148,22 @@ export default function Profile() {
             <div className="flex items-center space-x-3 text-sm">
               <Phone size={16} className="text-gray-400" />
               <span>{userProfile?.phone || 'Not set'}</span>
+            </div>
+            <div className="flex items-center space-x-3 text-sm">
+              <Briefcase size={16} className="text-gray-400" />
+              <span>
+                {userProfile?.departmentPreference
+                  ? DEPARTMENTS.find((d) => d.id === userProfile.departmentPreference)?.name || userProfile.departmentPreference
+                  : 'No department preference'}
+              </span>
+            </div>
+            <div className="flex items-center space-x-3 text-sm">
+              <CalendarDays size={16} className="text-gray-400" />
+              <span>
+                {(userProfile?.weeklyAvailability || []).length > 0
+                  ? (userProfile.weeklyAvailability || []).map((d) => DAYS_OF_WEEK.find((day) => day.id === d)?.label || d).join(', ')
+                  : 'No availability set'}
+              </span>
             </div>
             <button onClick={() => setEditing(true)} className="btn-secondary mt-4">
               Edit Profile
