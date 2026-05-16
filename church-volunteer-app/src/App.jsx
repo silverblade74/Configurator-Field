@@ -12,6 +12,7 @@ import Profile from './pages/Profile'
 import AdminDashboard from './pages/AdminDashboard'
 import LeaderDashboard from './pages/LeaderDashboard'
 import KioskMode from './pages/KioskMode'
+import ClaimProfile from './pages/ClaimProfile'
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
       {/* Public routes */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/claim/:token" element={<ClaimProfile />} />
 
       {/* Kiosk mode: full-screen, no layout wrapper */}
       <Route path="/kiosk/:eventId" element={

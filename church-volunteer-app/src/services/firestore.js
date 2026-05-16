@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { calculatePoints, getMilestoneBonus } from '../utils/gamification'
+import { generateClaimToken } from '../utils/claimToken'
 
 // ─── Ministries ──────────────────────────────────────────────
 
@@ -405,6 +406,66 @@ export async function updateVolunteerProfile(userId, data) {
 
 export async function deleteVolunteer(userId) {
   return deleteDoc(doc(db, 'users', userId))
+}
+
+// ─── Profile Claim ──────────────────────────────────────────
+
+// Generate a claim token for a managed volunteer
+export async function generateClaimForVolunteer(userId) {
+  const token = generateClaimToken()
+  await updateDoc(doc(db, 'users', userId), {
+    claimToken: token,
+    claimTokenCreatedAt: serverTimestamp(),
+  })
+  return token
+}
+
+// Look up a volunteer by claim token
+export async function getVolunteerByClaimToken(token) {
+  const q = query(collection(db, 'users'), where('claimToken', '==', token))
+  const snapshot = await getDocs(q)
+  if (snapshot.empty) return null
+  const d = snapshot.docs[0]
+  return { id: d.id, ...d.data() }
+}
+
+// Merge a managed volunteer profile with an authenticated user
+export async function claimVolunteerProfile(managedUserId, authUser) {
+  const managedRef = doc(db, 'users', managedUserId)
+  const managedSnap = await getDoc(managedRef)
+  if (!managedSnap.exists()) throw new Error('Profile not found')
+  const managedData = managedSnap.data()
+
+  // Update the managed doc to link it to the auth user
+  await updateDoc(managedRef, {
+    uid: authUser.uid,
+    email: authUser.email,
+    displayName: managedData.displayName || authUser.displayName || '',
+    photoURL: authUser.photoURL || '',
+    managed: false,
+    claimed: true,
+    claimedBy: authUser.uid,
+    claimedAt: serverTimestamp(),
+    claimToken: null, // consume the token
+    updatedAt: serverTimestamp(),
+  })
+
+  // Check if auth user has a separate auto-created profile doc, delete it
+  const authDocRef = doc(db, 'users', authUser.uid)
+  const authDocSnap = await getDoc(authDocRef)
+  if (authDocSnap.exists() && authDocSnap.id !== managedUserId) {
+    // Merge any hours/points from the auth doc into managed doc
+    const authData = authDocSnap.data()
+    if (authData.totalHours > 0 || authData.totalPoints > 0) {
+      await updateDoc(managedRef, {
+        totalHours: increment(authData.totalHours || 0),
+        totalPoints: increment(authData.totalPoints || 0),
+      })
+    }
+    await deleteDoc(authDocRef)
+  }
+
+  return { id: managedUserId, ...managedData }
 }
 
 // ─── Reports ─────────────────────────────────────────────────

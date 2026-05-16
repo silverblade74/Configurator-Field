@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../components/ToastProvider'
+import { useConfirm } from '../hooks/useConfirm'
 import {
   getAllUsers,
   getEvents,
@@ -37,6 +39,8 @@ import { Timestamp } from 'firebase/firestore'
 export default function AdminDashboard() {
   const { userProfile } = useAuth()
   const navigate = useNavigate()
+  const toast = useToast()
+  const { confirm, ConfirmDialog } = useConfirm()
   const [tab, setTab] = useState('overview')
   const [users, setUsers] = useState([])
   const [events, setEvents] = useState([])
@@ -113,13 +117,14 @@ export default function AdminDashboard() {
       setShowEventForm(false)
       setEventForm({ title: '', description: '', date: '', location: '', ministryId: '', maxVolunteers: '', durationHours: '' })
       await loadData()
+      toast.success('Event created')
     } catch (err) {
-      alert('Failed to create event')
+      toast.error('Failed to create event')
     }
   }
 
   async function handleDeleteEvent(id) {
-    if (!confirm('Delete this event?')) return
+    if (!await confirm({ title: 'Delete Event', message: 'This will remove the event and all signups.', confirmLabel: 'Delete', danger: true })) return
     await deleteEvent(id)
     await loadData()
   }
@@ -132,13 +137,14 @@ export default function AdminDashboard() {
       setShowMinistryForm(false)
       setMinistryForm({ name: '', description: '', leaderName: '', contactEmail: '' })
       await loadData()
+      toast.success('Ministry created')
     } catch (err) {
-      alert('Failed to create ministry')
+      toast.error('Failed to create ministry')
     }
   }
 
   async function handleDeleteMinistry(id) {
-    if (!confirm('Delete this ministry?')) return
+    if (!await confirm({ title: 'Delete Ministry', message: 'This will remove the ministry permanently.', confirmLabel: 'Delete', danger: true })) return
     await deleteMinistry(id)
     await loadData()
   }
@@ -207,7 +213,7 @@ export default function AdminDashboard() {
   }
 
   async function handleBulkCheckOut() {
-    if (!confirm('Check out all currently checked-in volunteers? Hours will be calculated from check-in time.')) return
+    if (!await confirm({ title: 'Check Out All', message: 'Check out all currently checked-in volunteers? Hours will be calculated from check-in time.', confirmLabel: 'Check Out All' })) return
     setBulkLoading(true)
     const active = eventSignups.filter((s) => s.status === 'checked_in')
     for (const s of active) {
@@ -229,7 +235,7 @@ export default function AdminDashboard() {
       await refreshSignups()
       await loadData()
     } catch (err) {
-      alert(err.message)
+      toast.error(err.message)
     }
   }
 
@@ -255,7 +261,7 @@ export default function AdminDashboard() {
       const signups = await getEventSignups(eventId)
       setAssignSignups(signups)
       await loadData()
-    } catch (err) { alert(err.message) }
+    } catch (err) { toast.error(err.message) }
   }
 
   async function handleRemoveFromEvent(signupId, eventId) {

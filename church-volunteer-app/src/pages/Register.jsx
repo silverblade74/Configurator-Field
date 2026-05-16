@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 export default function Register() {
@@ -11,6 +11,8 @@ export default function Register() {
   const [loading, setLoading] = useState(false)
   const { register, loginWithGoogle } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const redirectTo = searchParams.get('redirect') || '/dashboard'
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -25,7 +27,7 @@ export default function Register() {
     setLoading(true)
     try {
       await register(email, password, displayName)
-      navigate('/dashboard')
+      navigate(redirectTo)
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
         setError('An account with this email already exists')
@@ -40,7 +42,7 @@ export default function Register() {
     setError('')
     try {
       await loginWithGoogle()
-      navigate('/dashboard')
+      navigate(redirectTo)
     } catch (err) {
       setError('Failed to sign up with Google.')
     }

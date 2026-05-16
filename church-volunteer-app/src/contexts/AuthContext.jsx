@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -93,6 +93,15 @@ export function AuthProvider({ children }) {
     return unsubscribe
   }, [])
 
+  // Check for a pending claim token after login/register
+  const getPendingClaimRedirect = useCallback(() => {
+    const pendingToken = localStorage.getItem('pendingClaimToken')
+    if (pendingToken) {
+      return `/claim/${pendingToken}`
+    }
+    return null
+  }, [])
+
   const value = {
     currentUser,
     userProfile,
@@ -102,6 +111,7 @@ export function AuthProvider({ children }) {
     loginWithGoogle,
     logout,
     loading,
+    getPendingClaimRedirect,
   }
 
   return (

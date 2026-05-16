@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
@@ -11,6 +11,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const { login, loginWithGoogle } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const redirectTo = searchParams.get('redirect') || '/dashboard'
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -18,7 +20,7 @@ export default function Login() {
     setLoading(true)
     try {
       await login(email, password)
-      navigate('/dashboard')
+      navigate(redirectTo)
     } catch (err) {
       setError(err.code === 'auth/invalid-credential'
         ? 'Invalid email or password'
@@ -31,7 +33,7 @@ export default function Login() {
     setError('')
     try {
       await loginWithGoogle()
-      navigate('/dashboard')
+      navigate(redirectTo)
     } catch (err) {
       setError('Failed to log in with Google.')
     }
