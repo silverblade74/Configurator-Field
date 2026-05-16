@@ -8,8 +8,11 @@ import {
   getEvents,
   getMinistries,
   getServiceHoursSummary,
+  getAttendanceLogs,
   createEvent,
+  updateEvent,
   createMinistry,
+  updateMinistry,
   deleteEvent,
   deleteMinistry,
   updateUserRole,
@@ -26,20 +29,28 @@ import {
   assignDepartment,
   updateVolunteerProfile,
   generateClaimForVolunteer,
+  createEventTemplate,
+  getEventTemplates,
+  deleteEventTemplate,
+  generateEventsFromTemplate,
 } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
+import { exportToJSON } from '../utils/csvExport'
 import StatCard from '../components/StatCard'
+import BarChart from '../components/BarChart'
 import ClaimQRCode from '../components/ClaimQRCode'
 import {
   Users, Calendar, Clock, Award, Plus, Trash2,
   UserCheck, UserX, BarChart3,
   Search, MinusCircle, XCircle, UserPlus, Link as LinkIcon, QrCode,
-  Upload, Mail,
+  Upload, Mail, Pencil, Repeat, Download, ScrollText, Settings,
 } from 'lucide-react'
 import { Timestamp } from 'firebase/firestore'
 import CSVImport from '../components/CSVImport'
 import BulkInviteModal from '../components/BulkInviteModal'
+import AuditLogViewer from '../components/AuditLogViewer'
+import BrandingSettings from '../components/BrandingSettings'
 
 export default function AdminDashboard() {
   const { userProfile } = useAuth()
@@ -85,22 +96,36 @@ export default function AdminDashboard() {
   const [showCSVImport, setShowCSVImport] = useState(false)
   const [showBulkInvite, setShowBulkInvite] = useState(false)
 
+  // Edit state
+  const [editingEvent, setEditingEvent] = useState(null)
+  const [editingMinistry, setEditingMinistry] = useState(null)
+
+  // Recurring events
+  const [isRecurring, setIsRecurring] = useState(false)
+  const [recurringForm, setRecurringForm] = useState({
+    recurrenceType: 'weekly', dayOfWeek: 0, time: '09:00',
+  })
+  const [templates, setTemplates] = useState([])
+  const [generateRange, setGenerateRange] = useState({ templateId: '', months: 3 })
+
   useEffect(() => {
     loadData()
   }, [])
 
   async function loadData() {
     try {
-      const [usersData, eventsData, ministriesData, hoursData] = await Promise.all([
+      const [usersData, eventsData, ministriesData, hoursData, templatesData] = await Promise.all([
         getAllUsers(),
         getEvents(),
         getMinistries(),
         getServiceHoursSummary(),
+        getEventTemplates(),
       ])
       setUsers(usersData)
       setEvents(eventsData)
       setMinistries(ministriesData)
       setServiceHours(hoursData)
+      setTemplates(templatesData)
     } catch (err) {
       console.error('Error loading admin data:', err)
     }
@@ -112,23 +137,160 @@ export default function AdminDashboard() {
   const totalHours = users.reduce((sum, u) => sum + (u.totalHours || 0), 0)
   const upcomingEvents = events.filter((e) => e.date?.toDate() > new Date()).length
 
+  // Analytics: hours by department this month
+  const now = new Date()
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const hoursByDeptThisMonth = (() => {
+    const byDept = {}
+    const eventMap = Object.fromEntries(events.map((e) => [e.id, e]))
+    for (const h of serviceHours) {
+      const d = h.date && typeof h.date.toDate === 'function' ? h.date.toDate() : null
+      if (d && d >= monthStart) {
+        const event = eventMap[h.eventId]
+        const dept = event?.ministryId ? (ministries.find((m) => m.id === event.ministryId)?.name || event.ministryId) : 'General'
+        byDept[dept] = (byDept[dept] || 0) + (h.hours || 0)
+      }
+    }
+    return Object.entries(byDept).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
+  })()
+
+  // Analytics: monthly trend (last 6 months)
+  const monthlyTrend = (() => {
+    const months = []
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      months.push({ start: d, end: new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59), label: d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) })
+    }
+    return months.map((m) => {
+      const total = serviceHours.reduce((sum, h) => {
+        const d = h.date && typeof h.date.toDate === 'function' ? h.date.toDate() : null
+        return d && d >= m.start && d <= m.end ? sum + (h.hours || 0) : sum
+      }, 0)
+      return { label: m.label, value: total }
+    })
+  })()
+
+  // Export all data
+  const [exportLoading, setExportLoading] = useState(false)
+  async function handleExportAll() {
+    setExportLoading(true)
+    try {
+      const [allLogs, allSignups] = await Promise.all([
+        getAttendanceLogs(),
+        Promise.resolve([]), // eventSignups are per-event, we include the loaded data
+      ])
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        users: users.map((u) => ({ ...u, createdAt: u.createdAt?.toDate?.()?.toISOString() || null, updatedAt: u.updatedAt?.toDate?.()?.toISOString() || null, lastServedDate: u.lastServedDate?.toDate?.()?.toISOString() || null })),
+        events: events.map((e) => ({ ...e, date: e.date?.toDate?.()?.toISOString() || null, createdAt: e.createdAt?.toDate?.()?.toISOString() || null })),
+        ministries: ministries.map((m) => ({ ...m, createdAt: m.createdAt?.toDate?.()?.toISOString() || null })),
+        serviceHours: serviceHours.map((h) => ({ ...h, date: h.date?.toDate?.()?.toISOString() || null })),
+        attendanceLogs: allLogs.map((l) => ({ ...l, createdAt: l.createdAt?.toDate?.()?.toISOString() || null, checkedInAt: l.checkedInAt?.toDate?.()?.toISOString() || null, checkedOutAt: l.checkedOutAt?.toDate?.()?.toISOString() || null })),
+      }
+      exportToJSON(exportData, `church_volunteer_export_${new Date().toISOString().slice(0, 10)}.json`)
+      toast.success('Data exported')
+    } catch (err) {
+      console.error('Export error:', err)
+      toast.error('Failed to export data')
+    }
+    setExportLoading(false)
+  }
+
   // Event CRUD
-  async function handleCreateEvent(e) {
+  async function handleSubmitEvent(e) {
     e.preventDefault()
     try {
-      await createEvent({
-        ...eventForm,
-        date: Timestamp.fromDate(new Date(eventForm.date)),
-        maxVolunteers: eventForm.maxVolunteers ? Number(eventForm.maxVolunteers) : null,
-        durationHours: eventForm.durationHours ? Number(eventForm.durationHours) : null,
-      })
+      if (isRecurring && !editingEvent) {
+        // Create a recurring event template
+        await createEventTemplate({
+          title: eventForm.title,
+          description: eventForm.description,
+          location: eventForm.location,
+          ministryId: eventForm.ministryId,
+          maxVolunteers: eventForm.maxVolunteers ? Number(eventForm.maxVolunteers) : null,
+          durationHours: eventForm.durationHours ? Number(eventForm.durationHours) : null,
+          recurrenceType: recurringForm.recurrenceType,
+          dayOfWeek: Number(recurringForm.dayOfWeek),
+          time: recurringForm.time,
+        })
+        toast.success('Recurring template created')
+      } else if (editingEvent) {
+        // Update existing event
+        await updateEvent(editingEvent.id, {
+          title: eventForm.title,
+          description: eventForm.description,
+          date: Timestamp.fromDate(new Date(eventForm.date)),
+          location: eventForm.location,
+          ministryId: eventForm.ministryId,
+          maxVolunteers: eventForm.maxVolunteers ? Number(eventForm.maxVolunteers) : null,
+          durationHours: eventForm.durationHours ? Number(eventForm.durationHours) : null,
+        })
+        toast.success('Event updated')
+      } else {
+        await createEvent({
+          ...eventForm,
+          date: Timestamp.fromDate(new Date(eventForm.date)),
+          maxVolunteers: eventForm.maxVolunteers ? Number(eventForm.maxVolunteers) : null,
+          durationHours: eventForm.durationHours ? Number(eventForm.durationHours) : null,
+        })
+        toast.success('Event created')
+      }
       setShowEventForm(false)
+      setEditingEvent(null)
+      setIsRecurring(false)
       setEventForm({ title: '', description: '', date: '', location: '', ministryId: '', maxVolunteers: '', durationHours: '' })
+      setRecurringForm({ recurrenceType: 'weekly', dayOfWeek: 0, time: '09:00' })
       await loadData()
-      toast.success('Event created')
     } catch (err) {
-      toast.error('Failed to create event')
+      toast.error(editingEvent ? 'Failed to update event' : 'Failed to create event')
     }
+  }
+
+  function startEditEvent(event) {
+    const dateObj = event.date?.toDate()
+    const dateStr = dateObj ? new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''
+    setEditingEvent(event)
+    setEventForm({
+      title: event.title || '',
+      description: event.description || '',
+      date: dateStr,
+      location: event.location || '',
+      ministryId: event.ministryId || '',
+      maxVolunteers: event.maxVolunteers || '',
+      durationHours: event.durationHours || '',
+    })
+    setIsRecurring(false)
+    setShowEventForm(true)
+  }
+
+  function cancelEventForm() {
+    setShowEventForm(false)
+    setEditingEvent(null)
+    setIsRecurring(false)
+    setEventForm({ title: '', description: '', date: '', location: '', ministryId: '', maxVolunteers: '', durationHours: '' })
+    setRecurringForm({ recurrenceType: 'weekly', dayOfWeek: 0, time: '09:00' })
+  }
+
+  async function handleGenerateEvents(templateId) {
+    const template = templates.find((t) => t.id === templateId)
+    if (!template) return
+    try {
+      const start = new Date()
+      const end = new Date()
+      end.setMonth(end.getMonth() + (generateRange.months || 3))
+      const created = await generateEventsFromTemplate(template, start, end)
+      await loadData()
+      toast.success(`Generated ${created.length} events`)
+    } catch (err) {
+      toast.error('Failed to generate events')
+    }
+  }
+
+  async function handleDeleteTemplate(id) {
+    if (!await confirm({ title: 'Delete Template', message: 'This will remove the recurring template. Existing generated events will remain.', confirmLabel: 'Delete', danger: true })) return
+    await deleteEventTemplate(id)
+    await loadData()
+    toast.success('Template deleted')
   }
 
   async function handleDeleteEvent(id) {
@@ -138,17 +300,45 @@ export default function AdminDashboard() {
   }
 
   // Ministry CRUD
-  async function handleCreateMinistry(e) {
+  async function handleSubmitMinistry(e) {
     e.preventDefault()
     try {
-      await createMinistry(ministryForm)
+      if (editingMinistry) {
+        await updateMinistry(editingMinistry.id, {
+          name: ministryForm.name,
+          description: ministryForm.description,
+          leaderName: ministryForm.leaderName,
+          contactEmail: ministryForm.contactEmail,
+        })
+        toast.success('Ministry updated')
+      } else {
+        await createMinistry(ministryForm)
+        toast.success('Ministry created')
+      }
       setShowMinistryForm(false)
+      setEditingMinistry(null)
       setMinistryForm({ name: '', description: '', leaderName: '', contactEmail: '' })
       await loadData()
-      toast.success('Ministry created')
     } catch (err) {
-      toast.error('Failed to create ministry')
+      toast.error(editingMinistry ? 'Failed to update ministry' : 'Failed to create ministry')
     }
+  }
+
+  function startEditMinistry(ministry) {
+    setEditingMinistry(ministry)
+    setMinistryForm({
+      name: ministry.name || '',
+      description: ministry.description || '',
+      leaderName: ministry.leaderName || '',
+      contactEmail: ministry.contactEmail || '',
+    })
+    setShowMinistryForm(true)
+  }
+
+  function cancelMinistryForm() {
+    setShowMinistryForm(false)
+    setEditingMinistry(null)
+    setMinistryForm({ name: '', description: '', leaderName: '', contactEmail: '' })
   }
 
   async function handleDeleteMinistry(id) {
@@ -285,6 +475,8 @@ export default function AdminDashboard() {
     { id: 'ministries', label: 'Ministries', icon: Users },
     { id: 'users', label: 'Users', icon: Users },
     { id: 'checkin', label: 'Check-In', icon: UserCheck },
+    { id: 'auditlog', label: 'Audit Log', icon: ScrollText },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ]
 
   if (loading) {
@@ -325,6 +517,24 @@ export default function AdminDashboard() {
             <StatCard title="Total Hours" value={formatHours(totalHours)} icon={Clock} color="green" />
             <StatCard title="Upcoming Events" value={upcomingEvents} icon={Calendar} color="orange" />
             <StatCard title="Ministries" value={ministries.length} icon={Award} color="purple" />
+          </div>
+
+          {/* Analytics Charts */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <BarChart title="Hours This Month by Department" data={hoursByDeptThisMonth} color="primary" unit="h" />
+            <BarChart title="Monthly Trend (Last 6 Months)" data={monthlyTrend} color="green" unit="h" />
+          </div>
+
+          {/* Export All Data */}
+          <div className="flex justify-end">
+            <button
+              onClick={handleExportAll}
+              disabled={exportLoading}
+              className="btn-secondary flex items-center gap-1 text-sm"
+            >
+              <Download size={16} />
+              {exportLoading ? 'Exporting...' : 'Export All Data'}
+            </button>
           </div>
 
           {/* Top Volunteers */}
@@ -1015,6 +1225,22 @@ export default function AdminDashboard() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Audit Log Tab */}
+      {tab === 'auditlog' && (
+        <div className="space-y-4">
+          <h2 className="font-semibold text-lg">Audit Log</h2>
+          <p className="text-sm text-gray-500">Recent admin and system actions</p>
+          <AuditLogViewer />
+        </div>
+      )}
+
+      {/* Settings Tab */}
+      {tab === 'settings' && (
+        <div className="max-w-2xl">
+          <BrandingSettings />
         </div>
       )}
 

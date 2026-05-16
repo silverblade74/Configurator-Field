@@ -9,6 +9,7 @@ import {
   cancelSignup,
 } from '../services/firestore'
 import EmptyState from '../components/EmptyState'
+import SearchBar from '../components/SearchBar'
 import { Calendar, MapPin, Users, Clock, Check, X } from 'lucide-react'
 
 export default function Events() {
@@ -21,6 +22,7 @@ export default function Events() {
   const [ministryFilter, setMinistryFilter] = useState('')
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
     loadData()
@@ -75,6 +77,7 @@ export default function Events() {
       return true
     })
     .filter((e) => !ministryFilter || e.ministryId === ministryFilter)
+    .filter((e) => !searchQuery || e.title.toLowerCase().includes(searchQuery.toLowerCase()))
 
   function isSignedUp(eventId) {
     return userSignups.some((s) => s.eventId === eventId && s.status !== 'checked_out')
@@ -96,6 +99,9 @@ export default function Events() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-2xl font-bold">Events</h1>
+        <div className="w-full sm:w-64">
+          <SearchBar value={searchQuery} onChange={setSearchQuery} placeholder="Search events..." />
+        </div>
         <div className="flex flex-wrap gap-2">
           <select
             className="input w-auto"
