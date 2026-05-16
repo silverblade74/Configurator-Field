@@ -794,7 +794,8 @@ export default function AdminDashboard() {
                                 <button onClick={() => handleRemoveFromEvent(s.id, event.id)} className="text-gray-400 hover:text-red-500 p-1" title="Remove from event"><XCircle size={14} /></button>
                               )}
                             </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       </div>
                     )}
@@ -811,7 +812,7 @@ export default function AdminDashboard() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="font-semibold text-lg">Manage Ministries</h2>
-            <button onClick={() => setShowMinistryForm(!showMinistryForm)} className="btn-primary flex items-center space-x-1">
+            <button onClick={() => { cancelMinistryForm(); setShowMinistryForm(!showMinistryForm) }} className="btn-primary flex items-center space-x-1">
               <Plus size={16} />
               <span>New Ministry</span>
             </button>
@@ -819,7 +820,7 @@ export default function AdminDashboard() {
 
           {showMinistryForm && (
             <form onSubmit={handleSubmitMinistry} className="card space-y-4">
-              <h3 className="font-semibold">Create Ministry</h3>
+              <h3 className="font-semibold">{editingMinistry ? 'Edit Ministry' : 'Create Ministry'}</h3>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Name *</label>
@@ -843,8 +844,8 @@ export default function AdminDashboard() {
                 </div>
               </div>
               <div className="flex space-x-2">
-                <button type="submit" className="btn-primary">Create Ministry</button>
-                <button type="button" onClick={() => setShowMinistryForm(false)} className="btn-secondary">Cancel</button>
+                <button type="submit" className="btn-primary">{editingMinistry ? 'Update Ministry' : 'Create Ministry'}</button>
+                <button type="button" onClick={cancelMinistryForm} className="btn-secondary">Cancel</button>
               </div>
             </form>
           )}
@@ -860,10 +861,15 @@ export default function AdminDashboard() {
                     {m.memberCount ? ` · ${m.memberCount} members` : ''}
                   </p>
                 </div>
-                <button onClick={() => handleDeleteMinistry(m.id)}
-                  className="text-red-500 hover:text-red-700 p-1">
-                  <Trash2 size={14} />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => startEditMinistry(m)} className="text-gray-400 hover:text-primary-600 p-1" title="Edit ministry">
+                    <Pencil size={14} />
+                  </button>
+                  <button onClick={() => handleDeleteMinistry(m.id)}
+                    className="text-red-500 hover:text-red-700 p-1">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
