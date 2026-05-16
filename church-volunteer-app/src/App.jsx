@@ -13,6 +13,9 @@ import AdminDashboard from './pages/AdminDashboard'
 import LeaderDashboard from './pages/LeaderDashboard'
 import KioskMode from './pages/KioskMode'
 import ClaimProfile from './pages/ClaimProfile'
+import Onboarding from './pages/Onboarding'
+import Reports from './pages/Reports'
+import AttendanceHistory from './pages/AttendanceHistory'
 
 export default function App() {
   return (
@@ -21,6 +24,13 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/claim/:token" element={<ClaimProfile />} />
+
+      {/* Onboarding wizard: admin-only, full-screen */}
+      <Route path="/onboarding" element={
+        <ProtectedRoute requiredRole={['admin']}>
+          <Onboarding />
+        </ProtectedRoute>
+      } />
 
       {/* Kiosk mode: full-screen, no layout wrapper */}
       <Route path="/kiosk/:eventId" element={
@@ -51,6 +61,13 @@ export default function App() {
             <AdminDashboard />
           </ProtectedRoute>
         } />
+        <Route path="/reports" element={
+          <ProtectedRoute requiredRole={['admin']}>
+            <Reports />
+          </ProtectedRoute>
+        } />
+        <Route path="/history" element={<AttendanceHistory />} />
+        <Route path="/history/:userId" element={<AttendanceHistory />} />
       </Route>
 
       {/* Redirect */}

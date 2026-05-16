@@ -152,7 +152,12 @@ export default function VolunteerDashboard() {
 
         {/* Recent Activity */}
         <div className="card">
-          <h2 className="font-semibold text-lg mb-4">Recent Activity</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-semibold text-lg">Recent Activity</h2>
+            <Link to="/history" className="text-primary-600 text-sm hover:underline flex items-center">
+              View Full History <ArrowRight size={14} className="ml-1" />
+            </Link>
+          </div>
           {recentActivity.length === 0 ? (
             <p className="text-gray-400 text-sm py-4 text-center">
               No activity yet. Start volunteering to see your history here!

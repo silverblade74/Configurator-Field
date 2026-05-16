@@ -581,7 +581,7 @@ export default function AdminDashboard() {
           </div>
 
           {showEventForm && (
-            <form onSubmit={handleCreateEvent} className="card space-y-4">
+            <form onSubmit={handleSubmitEvent} className="card space-y-4">
               <h3 className="font-semibold">Create Event</h3>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>
@@ -714,7 +714,7 @@ export default function AdminDashboard() {
           </div>
 
           {showMinistryForm && (
-            <form onSubmit={handleCreateMinistry} className="card space-y-4">
+            <form onSubmit={handleSubmitMinistry} className="card space-y-4">
               <h3 className="font-semibold">Create Ministry</h3>
               <div className="grid sm:grid-cols-2 gap-4">
                 <div>

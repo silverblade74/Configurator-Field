@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/ToastProvider'
 import { formatHours, getLevel } from '../utils/gamification'
 import { User, Mail, Phone, Clock, Star, Award } from 'lucide-react'
+import AvatarUpload from '../components/AvatarUpload'
 
 export default function Profile() {
   const toast = useToast()
@@ -38,9 +39,7 @@ export default function Profile() {
 
       <div className="card">
         <div className="flex items-center space-x-4 mb-6">
-          <div className="w-16 h-16 rounded-full bg-primary-100 flex items-center justify-center text-2xl font-bold text-primary-600">
-            {userProfile?.displayName?.charAt(0)?.toUpperCase() || '?'}
-          </div>
+          <AvatarUpload />
           <div>
             <h2 className="text-xl font-semibold">{userProfile?.displayName}</h2>
             <p className={`text-sm ${level.color} font-medium`}>{level.name} Level</p>

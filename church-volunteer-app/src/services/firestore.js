@@ -6,6 +6,7 @@ import {
   deleteDoc,
   getDoc,
   getDocs,
+  setDoc,
   query,
   where,
   orderBy,
@@ -572,4 +573,32 @@ export async function generateEventsFromTemplate(template, startDate, endDate) {
   }
 
   return events
+}
+
+// ─── Branding Settings ──────────────────────────────────────
+
+export async function getBrandingSettings() {
+  const snapshot = await getDoc(doc(db, 'settings', 'branding'))
+  return snapshot.exists() ? snapshot.data() : null
+}
+
+export async function updateBrandingSettings(data) {
+  return setDoc(doc(db, 'settings', 'branding'), {
+    ...data,
+    updatedAt: serverTimestamp(),
+  }, { merge: true })
+}
+
+// ─── Onboarding ─────────────────────────────────────────────
+
+export async function getOnboardingStatus() {
+  const snapshot = await getDoc(doc(db, 'settings', 'onboardingComplete'))
+  return snapshot.exists() && snapshot.data().completed === true
+}
+
+export async function completeOnboarding() {
+  return setDoc(doc(db, 'settings', 'onboardingComplete'), {
+    completed: true,
+    completedAt: serverTimestamp(),
+  })
 }
