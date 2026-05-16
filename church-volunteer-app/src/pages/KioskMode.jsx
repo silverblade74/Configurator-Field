@@ -22,7 +22,6 @@ export default function KioskMode() {
 
   const [event, setEvent] = useState(null)
   const [allUsers, setAllUsers] = useState([])
-  const [signups, setSignups] = useState([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -30,30 +29,26 @@ export default function KioskMode() {
   const [batchCount, setBatchCount] = useState(0)
   const [showQuickAdd, setShowQuickAdd] = useState(false)
 
+  // Real-time signups listener
+  const { data: signups } = useEventRealtime(eventId)
+
   useEffect(() => {
     loadData()
   }, [eventId])
 
   async function loadData() {
     try {
-      const [eventData, usersData, signupsData] = await Promise.all([
+      const [eventData, usersData] = await Promise.all([
         getEvent(eventId),
         getAllUsers(),
-        getEventSignups(eventId),
       ])
       setEvent(eventData)
       setAllUsers(usersData)
-      setSignups(signupsData)
     } catch (err) {
       console.error('Kiosk load error:', err)
       toast.error('Failed to load event data')
     }
     setLoading(false)
-  }
-
-  async function refreshSignups() {
-    const data = await getEventSignups(eventId)
-    setSignups(data)
   }
 
   // Search: match against signups first, then all users not yet signed up
@@ -89,7 +84,6 @@ export default function KioskMode() {
     setActionLoading(signupId)
     try {
       await checkIn(signupId)
-      await refreshSignups()
       toast.success('Checked in!')
     } catch (err) { toast.error('Check-in failed') }
     setActionLoading(null)
@@ -99,7 +93,6 @@ export default function KioskMode() {
     setActionLoading(signupId)
     try {
       await checkOut(signupId, userId)
-      await refreshSignups()
       toast.success('Checked out!')
     } catch (err) { toast.error('Check-out failed') }
     setActionLoading(null)
@@ -109,7 +102,6 @@ export default function KioskMode() {
     setActionLoading(signupId)
     try {
       await releaseVolunteer(signupId)
-      await refreshSignups()
       toast.info('Volunteer released')
     } catch (err) { toast.error('Release failed') }
     setActionLoading(null)
@@ -117,13 +109,11 @@ export default function KioskMode() {
 
   async function handleDeptChange(signupId, dept) {
     await assignDepartment(signupId, dept)
-    await refreshSignups()
   }
 
   async function handleAddExisting(userId, displayName) {
     try {
       await adminAddVolunteer(eventId, userId, displayName)
-      await refreshSignups()
       setSearchQuery('')
       toast.success(`${displayName} checked in!`)
       searchRef.current?.focus()
@@ -133,9 +123,9 @@ export default function KioskMode() {
   async function handleQuickAdd({ displayName, phone, email, department }) {
     try {
       await createAndCheckInVolunteer(eventId, { displayName, phone, email, department })
-      const [usersData, signupsData] = await Promise.all([getAllUsers(), getEventSignups(eventId)])
+      // Refresh allUsers since a new user doc was created
+      const usersData = await getAllUsers()
       setAllUsers(usersData)
-      setSignups(signupsData)
       setBatchCount((c) => c + 1)
       toast.success(`${displayName} added & checked in!`)
       if (!batchMode) {

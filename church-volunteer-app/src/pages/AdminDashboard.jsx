@@ -25,14 +25,16 @@ import {
   deleteVolunteer,
   assignDepartment,
   updateVolunteerProfile,
+  generateClaimForVolunteer,
 } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
+import ClaimQRCode from '../components/ClaimQRCode'
 import {
   Users, Calendar, Clock, Award, Plus, Trash2,
   UserCheck, UserX, BarChart3,
-  Search, MinusCircle, XCircle, UserPlus,
+  Search, MinusCircle, XCircle, UserPlus, Link as LinkIcon, QrCode,
 } from 'lucide-react'
 import { Timestamp } from 'firebase/firestore'
 
@@ -76,6 +78,7 @@ export default function AdminDashboard() {
   const [showAddVolunteer, setShowAddVolunteer] = useState(false)
   const [volunteerSearch, setVolunteerSearch] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [claimTokenModal, setClaimTokenModal] = useState(null) // { userId, token } or null
 
   useEffect(() => {
     loadData()
@@ -671,20 +674,48 @@ export default function AdminDashboard() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {u.managed && (
-                        <button
-                          onClick={async () => {
-                            if (!await confirm({ title: 'Delete Volunteer', message: `Remove ${u.displayName}? This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return
-                            await deleteVolunteer(u.id)
-                            await loadData()
-                            toast.success(`${u.displayName} removed`)
-                          }}
-                          className="text-gray-400 hover:text-red-500 p-1"
-                          title="Delete volunteer"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
+                      <div className="flex items-center justify-end gap-1">
+                        {u.managed && !u.claimToken && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const token = await generateClaimForVolunteer(u.id)
+                                setClaimTokenModal({ userId: u.id, token })
+                                await loadData()
+                              } catch (err) {
+                                toast.error('Failed to generate claim link')
+                              }
+                            }}
+                            className="text-gray-400 hover:text-primary-600 p-1"
+                            title="Generate claim link"
+                          >
+                            <LinkIcon size={14} />
+                          </button>
+                        )}
+                        {u.managed && u.claimToken && (
+                          <button
+                            onClick={() => setClaimTokenModal({ userId: u.id, token: u.claimToken })}
+                            className="text-primary-500 hover:text-primary-700 p-1"
+                            title="Show QR code"
+                          >
+                            <QrCode size={14} />
+                          </button>
+                        )}
+                        {u.managed && (
+                          <button
+                            onClick={async () => {
+                              if (!await confirm({ title: 'Delete Volunteer', message: `Remove ${u.displayName}? This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return
+                              await deleteVolunteer(u.id)
+                              await loadData()
+                              toast.success(`${u.displayName} removed`)
+                            }}
+                            className="text-gray-400 hover:text-red-500 p-1"
+                            title="Delete volunteer"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -958,6 +989,21 @@ export default function AdminDashboard() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Claim Token Modal */}
+      {claimTokenModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setClaimTokenModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg">Claim Link</h3>
+              <button onClick={() => setClaimTokenModal(null)} className="text-gray-400 hover:text-gray-600 p-1">
+                <XCircle size={20} />
+              </button>
+            </div>
+            <ClaimQRCode token={claimTokenModal.token} />
+          </div>
         </div>
       )}
 
