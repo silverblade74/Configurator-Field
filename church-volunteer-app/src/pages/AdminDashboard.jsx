@@ -742,6 +742,9 @@ export default function AdminDashboard() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-400">{event.signupCount || 0} volunteers</span>
+                    <button onClick={() => startEditEvent(event)} className="text-gray-400 hover:text-primary-600 p-1" title="Edit event">
+                      <Pencil size={14} />
+                    </button>
                     <button onClick={() => openAssignEvent(event.id)} className={`btn-secondary text-xs py-1 px-3 flex items-center space-x-1 ${assignEventId === event.id ? 'ring-2 ring-primary-400' : ''}`}>
                       <UserPlus size={12} />
                       <span>Assign</span>
@@ -778,11 +781,13 @@ export default function AdminDashboard() {
                       <div>
                         <p className="text-xs font-medium text-gray-500 mb-2">Assigned volunteers ({assignSignups.length})</p>
                         <div className="space-y-1">
-                          {assignSignups.map((s) => (
+                          {assignSignups.map((s) => {
+                            const dept = DEPARTMENTS.find((d) => d.id === s.department)
+                            return (
                             <div key={s.id} className="flex items-center justify-between p-2 bg-white rounded text-sm">
                               <div className="flex items-center gap-2">
                                 <span>{s.userName}</span>
-                                {s.department && <span className="badge bg-primary-100 text-primary-700 text-xs">{getDeptInfo(s.department)?.icon} {getDeptInfo(s.department)?.name}</span>}
+                                {dept && <span className="badge bg-primary-100 text-primary-700 text-xs">{dept.icon} {dept.name}</span>}
                                 <span className={`badge text-xs ${s.status === 'checked_in' ? 'bg-green-100 text-green-700' : s.status === 'checked_out' ? 'bg-gray-100 text-gray-600' : 'bg-blue-100 text-blue-700'}`}>{s.status.replace('_', ' ')}</span>
                               </div>
                               {s.status === 'signed_up' && (
