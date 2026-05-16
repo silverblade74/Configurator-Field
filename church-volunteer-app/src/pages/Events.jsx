@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../components/ToastProvider'
 import {
   getEvents,
   getMinistries,
@@ -12,6 +13,7 @@ import { Calendar, MapPin, Users, Clock, Check, X } from 'lucide-react'
 
 export default function Events() {
   const { userProfile } = useAuth()
+  const toast = useToast()
   const [events, setEvents] = useState([])
   const [ministries, setMinistries] = useState([])
   const [userSignups, setUserSignups] = useState([])
@@ -46,7 +48,7 @@ export default function Events() {
       await signUpForEvent(eventId, userProfile.uid, userProfile.displayName)
       await loadData()
     } catch (err) {
-      alert(err.message)
+      toast.error(err.message)
     }
     setActionLoading(null)
   }
@@ -59,7 +61,7 @@ export default function Events() {
       await cancelSignup(signup.id, eventId)
       await loadData()
     } catch (err) {
-      alert('Failed to cancel signup')
+      toast.error('Failed to cancel signup')
     }
     setActionLoading(null)
   }

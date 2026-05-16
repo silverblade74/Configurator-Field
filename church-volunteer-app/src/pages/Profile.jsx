@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../components/ToastProvider'
 import { formatHours, getLevel } from '../utils/gamification'
 import { User, Mail, Phone, Clock, Star, Award } from 'lucide-react'
 
 export default function Profile() {
+  const toast = useToast()
   const { currentUser, userProfile, setUserProfile } = useAuth()
   const [editing, setEditing] = useState(false)
   const [displayName, setDisplayName] = useState(userProfile?.displayName || '')
@@ -23,7 +25,7 @@ export default function Profile() {
       setUserProfile((prev) => ({ ...prev, displayName, phone }))
       setEditing(false)
     } catch (err) {
-      alert('Failed to update profile')
+      toast.error('Failed to update profile')
     }
     setSaving(false)
   }

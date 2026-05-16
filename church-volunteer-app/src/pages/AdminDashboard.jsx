@@ -563,14 +563,15 @@ export default function AdminDashboard() {
             <form
               onSubmit={async (e) => {
                 e.preventDefault()
-                if (!volunteerForm.displayName.trim()) return alert('Name is required')
+                if (!volunteerForm.displayName.trim()) return toast.error('Name is required')
                 try {
                   await createManagedVolunteer(volunteerForm)
                   setVolunteerForm({ displayName: '', email: '', phone: '' })
                   setShowVolunteerForm(false)
                   await loadData()
+                  toast.success('Volunteer added')
                 } catch (err) {
-                  alert('Failed to create volunteer')
+                  toast.error('Failed to create volunteer')
                 }
               }}
               className="card space-y-4"
@@ -673,9 +674,10 @@ export default function AdminDashboard() {
                       {u.managed && (
                         <button
                           onClick={async () => {
-                            if (!confirm(`Delete ${u.displayName}? This cannot be undone.`)) return
+                            if (!await confirm({ title: 'Delete Volunteer', message: `Remove ${u.displayName}? This cannot be undone.`, confirmLabel: 'Delete', danger: true })) return
                             await deleteVolunteer(u.id)
                             await loadData()
+                            toast.success(`${u.displayName} removed`)
                           }}
                           className="text-gray-400 hover:text-red-500 p-1"
                           title="Delete volunteer"
@@ -958,6 +960,8 @@ export default function AdminDashboard() {
           )}
         </div>
       )}
+
+      {ConfirmDialog}
     </div>
   )
 }
