@@ -35,8 +35,11 @@ import {
   Users, Calendar, Clock, Award, Plus, Trash2,
   UserCheck, UserX, BarChart3,
   Search, MinusCircle, XCircle, UserPlus, Link as LinkIcon, QrCode,
+  Upload, Mail,
 } from 'lucide-react'
 import { Timestamp } from 'firebase/firestore'
+import CSVImport from '../components/CSVImport'
+import BulkInviteModal from '../components/BulkInviteModal'
 
 export default function AdminDashboard() {
   const { userProfile } = useAuth()
@@ -79,6 +82,8 @@ export default function AdminDashboard() {
   const [volunteerSearch, setVolunteerSearch] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
   const [claimTokenModal, setClaimTokenModal] = useState(null) // { userId, token } or null
+  const [showCSVImport, setShowCSVImport] = useState(false)
+  const [showBulkInvite, setShowBulkInvite] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -554,12 +559,22 @@ export default function AdminDashboard() {
       {/* Users Tab */}
       {tab === 'users' && (
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap justify-between items-center gap-2">
             <h2 className="font-semibold text-lg">Manage Users ({users.length})</h2>
-            <button onClick={() => setShowVolunteerForm(!showVolunteerForm)} className="btn-primary flex items-center space-x-1">
-              <UserPlus size={16} />
-              <span>Add Volunteer</span>
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => setShowCSVImport(!showCSVImport)} className="btn-secondary flex items-center space-x-1">
+                <Upload size={16} />
+                <span>Import CSV</span>
+              </button>
+              <button onClick={() => setShowBulkInvite(true)} className="btn-secondary flex items-center space-x-1">
+                <Mail size={16} />
+                <span>Bulk Invite</span>
+              </button>
+              <button onClick={() => setShowVolunteerForm(!showVolunteerForm)} className="btn-primary flex items-center space-x-1">
+                <UserPlus size={16} />
+                <span>Add Volunteer</span>
+              </button>
+            </div>
           </div>
 
           {showVolunteerForm && (
@@ -618,6 +633,17 @@ export default function AdminDashboard() {
                 <button type="button" onClick={() => setShowVolunteerForm(false)} className="btn-secondary">Cancel</button>
               </div>
             </form>
+          )}
+
+          {showCSVImport && (
+            <CSVImport onComplete={() => loadData()} />
+          )}
+
+          {showBulkInvite && (
+            <BulkInviteModal
+              volunteers={users}
+              onClose={() => { setShowBulkInvite(false); loadData() }}
+            />
           )}
 
           <div className="card p-0 overflow-hidden">
