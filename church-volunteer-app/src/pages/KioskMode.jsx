@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/ToastProvider'
+import { useEventRealtime } from '../hooks/useEventRealtime'
 import {
-  getEvent, getAllUsers, getEventSignups,
+  getEvent, getAllUsers,
   checkIn, checkOut, adminAddVolunteer, releaseVolunteer,
   assignDepartment, createAndCheckInVolunteer,
 } from '../services/firestore'
