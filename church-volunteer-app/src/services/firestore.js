@@ -103,7 +103,7 @@ export async function deleteEvent(id) {
 
 // ─── Event Signups ───────────────────────────────────────────
 
-export async function signUpForEvent(eventId, userId, userName) {
+export async function signUpForEvent(eventId, userId, userName, department = null) {
   const existing = query(
     collection(db, 'eventSignups'),
     where('eventId', '==', eventId),
@@ -116,6 +116,7 @@ export async function signUpForEvent(eventId, userId, userName) {
     eventId,
     userId,
     userName,
+    department: department || null,
     status: 'signed_up', // signed_up | checked_in | checked_out | no_show
     checkedInAt: null,
     checkedOutAt: null,
@@ -489,4 +490,86 @@ export async function getServiceHoursSummary() {
   const q = query(collection(db, 'serviceHours'), orderBy('date', 'desc'), limit(500))
   const snapshot = await getDocs(q)
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+// ─── Event Templates (Recurring Events) ─────────────────────
+
+export async function createEventTemplate(data) {
+  return addDoc(collection(db, 'eventTemplates'), {
+    ...data,
+    createdAt: serverTimestamp(),
+  })
+}
+
+export async function getEventTemplates() {
+  const q = query(collection(db, 'eventTemplates'), orderBy('createdAt', 'desc'))
+  const snapshot = await getDocs(q)
+  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
+export async function deleteEventTemplate(id) {
+  return deleteDoc(doc(db, 'eventTemplates', id))
+}
+
+export async function generateEventsFromTemplate(template, startDate, endDate) {
+  const start = new Date(startDate)
+  const end = new Date(endDate)
+  const events = []
+
+  // Parse the target day of week (0=Sun, 1=Mon, ... 6=Sat)
+  const targetDay = template.dayOfWeek
+
+  // Parse time
+  const [hours, minutes] = (template.time || '09:00').split(':').map(Number)
+
+  // Find the first occurrence of targetDay on or after start
+  let current = new Date(start)
+  while (current.getDay() !== targetDay) {
+    current.setDate(current.getDate() + 1)
+  }
+
+  // Determine step based on recurrence type
+  let dayStep = 7 // weekly
+  if (template.recurrenceType === 'biweekly') dayStep = 14
+  if (template.recurrenceType === 'monthly') dayStep = 0 // handled differently
+
+  while (current <= end) {
+    const eventDate = new Date(current)
+    eventDate.setHours(hours, minutes, 0, 0)
+
+    const ref = await addDoc(collection(db, 'events'), {
+      title: template.title,
+      description: template.description || '',
+      date: Timestamp.fromDate(eventDate),
+      location: template.location || '',
+      ministryId: template.ministryId || '',
+      maxVolunteers: template.maxVolunteers || null,
+      durationHours: template.durationHours || null,
+      templateId: template.id,
+      signupCount: 0,
+      createdAt: serverTimestamp(),
+    })
+    events.push(ref)
+
+    if (template.recurrenceType === 'monthly') {
+      // Move to same day of week in next month
+      current.setMonth(current.getMonth() + 1)
+      // Find the first occurrence of targetDay in the new month
+      const month = current.getMonth()
+      while (current.getDay() !== targetDay) {
+        current.setDate(current.getDate() + 1)
+      }
+      // If we overflowed into the next month, step forward another month
+      if (current.getMonth() !== month) {
+        current.setMonth(current.getMonth() + 1)
+        while (current.getDay() !== targetDay) {
+          current.setDate(current.getDate() + 1)
+        }
+      }
+    } else {
+      current.setDate(current.getDate() + dayStep)
+    }
+  }
+
+  return events
 }
