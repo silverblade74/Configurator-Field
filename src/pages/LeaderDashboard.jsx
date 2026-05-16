@@ -1,19 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import {
-  getAllUsers,
-  getMinistries,
-  getEvents,
-  getEventSignups,
-  getPendingUsersForReviewer,
-  approveUser,
-  rejectUser,
-} from '../services/firestore'
+import { getAllUsers, getMinistries, getEvents, getEventSignups } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
 import EmptyState from '../components/EmptyState'
-import Notice from '../components/Notice'
 import {
   Users, Clock, Calendar, ChevronDown, ChevronUp,
   Search, Mail, Phone, TrendingUp, UserCheck, AlertCircle,
@@ -29,88 +20,21 @@ export default function LeaderDashboard() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedDept, setSelectedDept] = useState('all')
   const [eventSignupsMap, setEventSignupsMap] = useState({})
-  const [pendingUsers, setPendingUsers] = useState([])
-  const [approvalLoading, setApprovalLoading] = useState(null)
-  const [message, setMessage] = useState(null)
 
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    const results = await Promise.allSettled([
-      getAllUsers(),
-      getMinistries(),
-      getEvents(),
-      getPendingUsersForReviewer(userProfile),
-    ])
-    const [usersRes, ministriesRes, eventsRes, pendingRes] = results
-    const pick = (res, fallback, label) => {
-      if (res.status === 'fulfilled') return res.value
-      console.error(`Error loading ${label}:`, res.reason)
-      return fallback
-    }
-    const usersData = pick(usersRes, [], 'users')
-    const ministriesData = pick(ministriesRes, [], 'ministries')
-    const eventsData = pick(eventsRes, [], 'events')
-    setUsers(usersData)
-    setMinistries(ministriesData)
-    setEvents(eventsData)
-    setPendingUsers(pick(pendingRes, [], 'pending users'))
-
     try {
+      const [usersData, ministriesData, eventsData] = await Promise.all([
+        getAllUsers(), getMinistries(), getEvents(),
+      ])
+      setUsers(usersData); setMinistries(ministriesData); setEvents(eventsData)
       const upcoming = eventsData.filter((e) => e.date?.toDate() > new Date()).slice(0, 10)
       const signupsMap = {}
-      await Promise.all(
-        upcoming.map(async (event) => {
-          const signups = await getEventSignups(event.id)
-          signupsMap[event.id] = signups
-        })
-      )
+      await Promise.all(upcoming.map(async (event) => { signupsMap[event.id] = await getEventSignups(event.id) }))
       setEventSignupsMap(signupsMap)
-    } catch (err) {
-      console.error('Error loading event signups:', err)
-    }
+    } catch (err) { console.error('Error loading leader data:', err) }
     setLoading(false)
-  }
-
-  async function handleApproveUser(userId) {
-    setApprovalLoading(userId)
-    setMessage(null)
-    try {
-      await approveUser(userId, userProfile.uid)
-    } catch (err) {
-      console.error('approveUser failed:', err)
-      setMessage({ type: 'error', text: 'Failed to approve user.' })
-      setApprovalLoading(null)
-      return
-    }
-    setMessage({ type: 'success', text: 'User approved.' })
-    try {
-      await loadData()
-    } catch (err) {
-      // keep the success message
-    }
-    setApprovalLoading(null)
-  }
-
-  async function handleRejectUser(userId) {
-    const note = window.prompt('Optional rejection note') || ''
-    setApprovalLoading(userId)
-    setMessage(null)
-    try {
-      await rejectUser(userId, userProfile.uid, note)
-    } catch (err) {
-      console.error('rejectUser failed:', err)
-      setMessage({ type: 'error', text: 'Failed to reject user.' })
-      setApprovalLoading(null)
-      return
-    }
-    setMessage({ type: 'success', text: 'User rejected.' })
-    try {
-      await loadData()
-    } catch (err) {
-      // keep the success message
-    }
-    setApprovalLoading(null)
   }
 
   function getMinistryForDept(dept) {
@@ -127,108 +51,37 @@ export default function LeaderDashboard() {
       const ministry = getMinistryForDept(dept)
       const volunteers = ministry ? getVolunteersForMinistry(ministry.id) : []
       const totalHours = volunteers.reduce((sum, v) => sum + (v.totalHours || 0), 0)
-      const upcomingEventCount = ministry
-        ? events.filter((e) => e.ministryId === ministry.id && e.date?.toDate() > new Date()).length
-        : 0
+      const upcomingEventCount = ministry ? events.filter((e) => e.ministryId === ministry.id && e.date?.toDate() > new Date()).length : 0
       return { ...dept, ministry, volunteers, totalHours, upcomingEventCount }
     })
   }
 
   const isLeaderOnly = userProfile?.role === 'ministry_leader'
   const leaderDept = userProfile?.assignedDepartment || null
-
   const allDepartmentData = getDepartmentData()
-  const departmentData = isLeaderOnly && leaderDept
-    ? allDepartmentData.filter((d) => d.id === leaderDept)
-    : allDepartmentData
+  const departmentData = isLeaderOnly && leaderDept ? allDepartmentData.filter((d) => d.id === leaderDept) : allDepartmentData
 
-  const totalVolunteers = isLeaderOnly
-    ? departmentData.reduce((sum, d) => sum + d.volunteers.length, 0)
-    : users.filter((u) => u.role === 'volunteer').length
+  const totalVolunteers = isLeaderOnly ? departmentData.reduce((sum, d) => sum + d.volunteers.length, 0) : users.filter((u) => u.role === 'volunteer').length
   const assignedVolunteers = new Set(departmentData.flatMap((d) => d.volunteers.map((v) => v.id))).size
   const unassignedCount = isLeaderOnly ? 0 : (users.filter((u) => u.role === 'volunteer').length - new Set(allDepartmentData.flatMap((d) => d.volunteers.map((v) => v.id))).size)
   const totalDeptHours = departmentData.reduce((sum, d) => sum + d.totalHours, 0)
 
-  const filteredDepartments = departmentData.filter((dept) => {
-    if (selectedDept !== 'all' && dept.id !== selectedDept) return false
-    return true
-  })
+  const filteredDepartments = departmentData.filter((dept) => selectedDept === 'all' || dept.id === selectedDept)
 
-  const searchResults = searchQuery.length >= 2
-    ? users.filter((u) =>
-        (u.displayName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (u.email || '').toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : []
+  const searchResults = searchQuery.length >= 2 ? users.filter((u) => (u.displayName || '').toLowerCase().includes(searchQuery.toLowerCase()) || (u.email || '').toLowerCase().includes(searchQuery.toLowerCase())) : []
 
   function getVolunteerDepartments(userId) {
     return departmentData.filter((d) => d.volunteers.some((v) => v.id === userId)).map((d) => d.name)
   }
 
-  if (loading) {
-    return (<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>)
-  }
+  if (loading) return (<div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>)
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">
-          {isLeaderOnly && leaderDept
-            ? `${DEPARTMENTS.find((d) => d.id === leaderDept)?.icon || ''} ${DEPARTMENTS.find((d) => d.id === leaderDept)?.name || 'My'} Department`
-            : 'Leader Dashboard'}
-        </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          {isLeaderOnly && leaderDept
-            ? 'Your assigned volunteers and department activity'
-            : 'Serve Coordinators & Ministry Leaders \u2014 volunteer assignments by department'}
-        </p>
-        {isLeaderOnly && !leaderDept && (
-          <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
-            You haven't been assigned to a department yet. Ask an admin to assign you in Admin \u2192 Users.
-          </div>
-        )}
-      </div>
-
-      {message && <Notice type={message.type}>{message.text}</Notice>}
-
-      <div className="card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold text-lg">Pending Approvals for my ministries</h2>
-          <span className="badge bg-blue-100 text-blue-700">{pendingUsers.length} pending</span>
-        </div>
-        {pendingUsers.length === 0 ? (
-          <p className="text-sm text-gray-500">No pending users in your ministries.</p>
-        ) : (
-          <div className="space-y-3">
-            {pendingUsers.map((u) => (
-              <div key={u.id} className="flex flex-col gap-3 rounded-lg border border-gray-100 p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="font-medium">{u.displayName || u.email}</p>
-                  <p className="text-sm text-gray-500">{u.email}</p>
-                  <p className="text-xs text-gray-400">
-                    Requested ministries: {(u.requestedMinistryIds || []).map((id) => ministries.find((m) => m.id === id)?.name || id).join(', ') || 'None selected'}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    className="btn-primary text-sm"
-                    disabled={approvalLoading === u.id}
-                    onClick={() => handleApproveUser(u.id)}
-                  >
-                    {approvalLoading === u.id ? 'Approving...' : 'Approve'}
-                  </button>
-                  <button
-                    className="btn-secondary text-sm"
-                    disabled={approvalLoading === u.id}
-                    onClick={() => handleRejectUser(u.id)}
-                  >
-                    Reject
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <h1 className="text-2xl font-bold">{isLeaderOnly && leaderDept ? `${DEPARTMENTS.find((d) => d.id === leaderDept)?.icon || ''} ${DEPARTMENTS.find((d) => d.id === leaderDept)?.name || 'My'} Department` : 'Leader Dashboard'}</h1>
+        <p className="text-gray-500 text-sm mt-1">{isLeaderOnly && leaderDept ? 'Your assigned volunteers and department activity' : 'Serve Coordinators & Ministry Leaders — volunteer assignments by department'}</p>
+        {isLeaderOnly && !leaderDept && (<div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">You haven't been assigned to a department yet. Ask an admin to assign you in Admin → Users.</div>)}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -239,53 +92,24 @@ export default function LeaderDashboard() {
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" className="input pl-9" placeholder="Search volunteers by name or email..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-        </div>
-        {!isLeaderOnly && (
-          <select className="input w-auto" value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}>
-            <option value="all">All Departments</option>
-            {DEPARTMENTS.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
-          </select>
-        )}
+        <div className="relative flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" className="input pl-9" placeholder="Search volunteers by name or email..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
+        {!isLeaderOnly && (<select className="input w-auto" value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}><option value="all">All Departments</option>{DEPARTMENTS.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}</select>)}
       </div>
 
       {searchQuery.length >= 2 && (
         <div className="card">
           <h2 className="font-semibold text-lg mb-3">Search Results ({searchResults.length})</h2>
-          {searchResults.length === 0 ? (
-            <p className="text-gray-400 text-sm">No volunteers found matching "{searchQuery}"</p>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {searchResults.slice(0, 20).map((user) => {
-                const depts = getVolunteerDepartments(user.id)
-                return (
-                  <div key={user.id} className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-9 h-9 rounded-full bg-primary-100 flex items-center justify-center text-sm font-bold text-primary-600">{user.displayName?.charAt(0)?.toUpperCase() || '?'}</div>
-                      <div><p className="font-medium text-sm">{user.displayName || 'Unknown'}</p><p className="text-xs text-gray-400">{user.email}</p></div>
-                    </div>
-                    <div className="flex items-center gap-2 ml-12 sm:ml-0">
-                      {depts.length > 0 ? depts.map((d) => (<span key={d} className="badge bg-primary-100 text-primary-700">{d}</span>)) : (<span className="badge bg-gray-100 text-gray-500">Unassigned</span>)}
-                      <span className="text-xs text-gray-400">{formatHours(user.totalHours || 0)}</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+          {searchResults.length === 0 ? (<p className="text-gray-400 text-sm">No volunteers found</p>) : (
+            <div className="divide-y divide-gray-100">{searchResults.slice(0, 20).map((user) => {
+              const depts = getVolunteerDepartments(user.id)
+              return (<div key={user.id} className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"><div className="flex items-center space-x-3"><div className="w-9 h-9 rounded-full bg-primary-100 flex items-center justify-center text-sm font-bold text-primary-600">{user.displayName?.charAt(0)?.toUpperCase() || '?'}</div><div><p className="font-medium text-sm">{user.displayName || 'Unknown'}</p><p className="text-xs text-gray-400">{user.email}</p></div></div><div className="flex items-center gap-2 ml-12 sm:ml-0">{depts.length > 0 ? depts.map((d) => (<span key={d} className="badge bg-primary-100 text-primary-700">{d}</span>)) : (<span className="badge bg-gray-100 text-gray-500">Unassigned</span>)}<span className="text-xs text-gray-400">{formatHours(user.totalHours || 0)}</span></div></div>)
+            })}</div>
           )}
         </div>
       )}
 
       {unassignedCount > 0 && selectedDept === 'all' && !searchQuery && !isLeaderOnly && (
-        <div className="flex items-start space-x-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-          <AlertCircle size={20} className="text-amber-600 mt-0.5 shrink-0" />
-          <div>
-            <p className="font-medium text-amber-800 text-sm">{unassignedCount} volunteer{unassignedCount !== 1 ? 's' : ''} not assigned to a department</p>
-            <p className="text-xs text-amber-600 mt-0.5">Assign them via Admin \u2192 Users, or add ministry IDs to their profile.</p>
-          </div>
-        </div>
+        <div className="flex items-start space-x-3 p-4 bg-amber-50 border border-amber-200 rounded-xl"><AlertCircle size={20} className="text-amber-600 mt-0.5 shrink-0" /><div><p className="font-medium text-amber-800 text-sm">{unassignedCount} volunteer{unassignedCount !== 1 ? 's' : ''} not assigned</p><p className="text-xs text-amber-600 mt-0.5">Assign them via Admin → Users.</p></div></div>
       )}
 
       <div className="space-y-3">
@@ -294,68 +118,21 @@ export default function LeaderDashboard() {
           return (
             <div key={dept.id} className="card p-0 overflow-hidden">
               <button onClick={() => setExpandedDept(isExpanded ? null : dept.id)} className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors">
-                <div className="flex items-center space-x-3">
-                  <span className="text-2xl">{dept.icon}</span>
-                  <div className="text-left">
-                    <h3 className="font-semibold">{dept.name}</h3>
-                    <p className="text-xs text-gray-500">
-                      {dept.volunteers.length} volunteer{dept.volunteers.length !== 1 ? 's' : ''}
-                      {dept.totalHours > 0 && ` \u00B7 ${formatHours(dept.totalHours)} total`}
-                      {dept.upcomingEventCount > 0 && ` \u00B7 ${dept.upcomingEventCount} upcoming event${dept.upcomingEventCount !== 1 ? 's' : ''}`}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-3">
-                  <span className={`badge ${dept.color}`}>{dept.volunteers.length}</span>
-                  {isExpanded ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}
-                </div>
+                <div className="flex items-center space-x-3"><span className="text-2xl">{dept.icon}</span><div className="text-left"><h3 className="font-semibold">{dept.name}</h3><p className="text-xs text-gray-500">{dept.volunteers.length} volunteer{dept.volunteers.length !== 1 ? 's' : ''}{dept.totalHours > 0 && ` · ${formatHours(dept.totalHours)} total`}{dept.upcomingEventCount > 0 && ` · ${dept.upcomingEventCount} upcoming`}</p></div></div>
+                <div className="flex items-center space-x-3"><span className={`badge ${dept.color}`}>{dept.volunteers.length}</span>{isExpanded ? <ChevronUp size={18} className="text-gray-400" /> : <ChevronDown size={18} className="text-gray-400" />}</div>
               </button>
-
               {isExpanded && (
                 <div className="border-t border-gray-100">
-                  {dept.volunteers.length === 0 ? (
-                    <div className="px-5 py-6 text-center">
-                      <p className="text-gray-400 text-sm">No volunteers assigned to this department yet.</p>
-                      {!dept.ministry && (<p className="text-xs text-amber-600 mt-1">Create a ministry named "{dept.name}" in Admin to start assigning volunteers.</p>)}
-                    </div>
-                  ) : (
+                  {dept.volunteers.length === 0 ? (<div className="px-5 py-6 text-center"><p className="text-gray-400 text-sm">No volunteers assigned yet.</p></div>) : (
                     <div className="divide-y divide-gray-50">
-                      <div className="px-5 py-2 bg-gray-50 flex items-center text-xs font-medium text-gray-500 uppercase">
-                        <span className="flex-1">Volunteer</span>
-                        <span className="w-20 text-right hidden sm:block">Hours</span>
-                        <span className="w-20 text-right hidden sm:block">Points</span>
-                        <span className="w-20 text-right hidden md:block">Streak</span>
-                        <span className="w-24 text-right">Status</span>
-                      </div>
+                      <div className="px-5 py-2 bg-gray-50 flex items-center text-xs font-medium text-gray-500 uppercase"><span className="flex-1">Volunteer</span><span className="w-20 text-right hidden sm:block">Hours</span><span className="w-20 text-right hidden sm:block">Points</span><span className="w-24 text-right">Status</span></div>
                       {dept.volunteers.sort((a, b) => (b.totalHours || 0) - (a.totalHours || 0)).map((vol) => {
-                        const isActive = vol.lastServedDate?.toDate() > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-                        return (
-                          <div key={vol.id} className="px-5 py-3 flex items-center hover:bg-gray-50">
-                            <div className="flex-1 flex items-center space-x-3 min-w-0">
-                              <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 shrink-0">{vol.displayName?.charAt(0)?.toUpperCase() || '?'}</div>
-                              <div className="min-w-0">
-                                <p className="font-medium text-sm truncate">{vol.displayName || 'Unknown'}</p>
-                                <div className="flex items-center space-x-2 text-xs text-gray-400">
-                                  {vol.email && (<span className="flex items-center space-x-1 truncate"><Mail size={10} /><span className="truncate">{vol.email}</span></span>)}
-                                  {vol.phone && (<span className="flex items-center space-x-1 hidden lg:flex"><Phone size={10} /><span>{vol.phone}</span></span>)}
-                                </div>
-                              </div>
-                            </div>
-                            <span className="w-20 text-right text-sm hidden sm:block">{formatHours(vol.totalHours || 0)}</span>
-                            <span className="w-20 text-right text-sm hidden sm:block">{vol.totalPoints || 0}</span>
-                            <span className="w-20 text-right text-sm hidden md:block">{vol.streak || 0}w</span>
-                            <span className="w-24 text-right"><span className={`badge ${isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{isActive ? 'Active' : 'Inactive'}</span></span>
-                          </div>
-                        )
+                        const isActive = vol.lastServedDate?.toDate() > new Date(Date.now() - 30 * 86400000)
+                        return (<div key={vol.id} className="px-5 py-3 flex items-center hover:bg-gray-50"><div className="flex-1 flex items-center space-x-3 min-w-0"><div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 shrink-0">{vol.displayName?.charAt(0)?.toUpperCase() || '?'}</div><div className="min-w-0"><p className="font-medium text-sm truncate">{vol.displayName || 'Unknown'}</p><div className="flex items-center space-x-2 text-xs text-gray-400">{vol.email && (<span className="flex items-center space-x-1 truncate"><Mail size={10} /><span className="truncate">{vol.email}</span></span>)}{vol.phone && (<span className="flex items-center space-x-1 hidden lg:flex"><Phone size={10} /><span>{vol.phone}</span></span>)}</div></div></div><span className="w-20 text-right text-sm hidden sm:block">{formatHours(vol.totalHours || 0)}</span><span className="w-20 text-right text-sm hidden sm:block">{vol.totalPoints || 0}</span><span className="w-24 text-right"><span className={`badge ${isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{isActive ? 'Active' : 'Inactive'}</span></span></div>)
                       })}
                     </div>
                   )}
-                  {dept.volunteers.length > 0 && (
-                    <div className="px-5 py-3 bg-gray-50 flex items-center justify-between text-xs text-gray-500">
-                      <span>{dept.volunteers.filter((v) => { const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); return v.lastServedDate?.toDate() > cutoff }).length} active in last 30 days</span>
-                      <span>Avg: {formatHours(dept.totalHours / dept.volunteers.length)} per volunteer</span>
-                    </div>
-                  )}
+                  {dept.volunteers.length > 0 && (<div className="px-5 py-3 bg-gray-50 flex items-center justify-between text-xs text-gray-500"><span>{dept.volunteers.filter((v) => v.lastServedDate?.toDate() > new Date(Date.now() - 30 * 86400000)).length} active in last 30 days</span><span>Avg: {formatHours(dept.totalHours / dept.volunteers.length)} per volunteer</span></div>)}
                 </div>
               )}
             </div>
@@ -365,36 +142,15 @@ export default function LeaderDashboard() {
 
       {selectedDept === 'all' && !searchQuery && (
         <div className="card">
-          <h2 className="font-semibold text-lg mb-4">Upcoming Events{isLeaderOnly && leaderDept ? '' : ' by Department'}</h2>
-          {events.filter((e) => e.date?.toDate() > new Date()).length === 0 ? (
-            <p className="text-gray-400 text-sm text-center py-4">No upcoming events</p>
-          ) : (
-            <div className="space-y-3">
-              {events.filter((e) => e.date?.toDate() > new Date()).sort((a, b) => a.date.toDate() - b.date.toDate()).slice(0, 10).map((event) => {
-                const ministry = ministries.find((m) => m.id === event.ministryId)
-                const dept = ministry ? DEPARTMENTS.find((d) => d.name.toLowerCase().trim() === ministry.name.toLowerCase().trim()) : null
-                const signups = eventSignupsMap[event.id] || []
-                if (isLeaderOnly && leaderDept && dept?.id !== leaderDept) return null
-                return (
-                  <div key={event.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <span className="text-lg">{dept?.icon || '\uD83D\uDCC5'}</span>
-                      <div>
-                        <p className="font-medium text-sm">{event.title}</p>
-                        <p className="text-xs text-gray-500">
-                          {event.date?.toDate().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                          {ministry && ` \u00B7 ${ministry.name}`}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium">{signups.length} signed up</p>
-                      {event.maxVolunteers && (<p className="text-xs text-gray-400">of {event.maxVolunteers} needed</p>)}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+          <h2 className="font-semibold text-lg mb-4">Upcoming Events</h2>
+          {events.filter((e) => e.date?.toDate() > new Date()).length === 0 ? (<p className="text-gray-400 text-sm text-center py-4">No upcoming events</p>) : (
+            <div className="space-y-3">{events.filter((e) => e.date?.toDate() > new Date()).sort((a, b) => a.date.toDate() - b.date.toDate()).slice(0, 10).map((event) => {
+              const ministry = ministries.find((m) => m.id === event.ministryId)
+              const dept = ministry ? DEPARTMENTS.find((d) => d.name.toLowerCase().trim() === ministry.name.toLowerCase().trim()) : null
+              const signups = eventSignupsMap[event.id] || []
+              if (isLeaderOnly && leaderDept && dept?.id !== leaderDept) return null
+              return (<div key={event.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"><div className="flex items-center space-x-3"><span className="text-lg">{dept?.icon || '📅'}</span><div><p className="font-medium text-sm">{event.title}</p><p className="text-xs text-gray-500">{event.date?.toDate().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{ministry && ` · ${ministry.name}`}</p></div></div><div className="text-right"><p className="text-sm font-medium">{signups.length} signed up</p>{event.maxVolunteers && (<p className="text-xs text-gray-400">of {event.maxVolunteers} needed</p>)}</div></div>)
+            })}</div>
           )}
         </div>
       )}
