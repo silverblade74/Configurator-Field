@@ -155,6 +155,22 @@ export async function markNoShow(signupId) {
   return updateDoc(doc(db, 'eventSignups', signupId), { status: 'no_show' })
 }
 
+export async function createAndCheckInVolunteer(eventId, { displayName, phone, email, department }) {
+  const userRef = await addDoc(collection(db, 'users'), {
+    uid: null, email: email || '', displayName: displayName || '', photoURL: '',
+    phone: phone || '', role: 'volunteer', managed: true, ministries: [],
+    totalHours: 0, totalPoints: 0, badges: [], streak: 0,
+    lastServedDate: null, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  })
+  const signupRef = await addDoc(collection(db, 'eventSignups'), {
+    eventId, userId: userRef.id, userName: displayName, status: 'checked_in',
+    department: department || null, checkedInAt: serverTimestamp(),
+    checkedOutAt: null, hoursLogged: 0, createdAt: serverTimestamp(),
+  })
+  await updateDoc(doc(db, 'events', eventId), { signupCount: increment(1) })
+  return { volunteerId: userRef.id, signupId: signupRef.id }
+}
+
 export async function assignDepartment(signupId, department) {
   return updateDoc(doc(db, 'eventSignups', signupId), { department: department || null })
 }
