@@ -4,6 +4,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { calculatePoints, getMilestoneBonus } from '../utils/gamification'
+import { generateClaimToken } from '../utils/claimToken'
 
 export async function getMinistries() {
   const q = query(collection(db, 'ministries'), orderBy('name'))
@@ -247,6 +248,58 @@ export async function updateVolunteerProfile(userId, data) {
 }
 
 export async function deleteVolunteer(userId) { return deleteDoc(doc(db, 'users', userId)) }
+
+export async function generateClaimForVolunteer(userId) {
+  const token = generateClaimToken()
+  await updateDoc(doc(db, 'users', userId), {
+    claimToken: token,
+    claimTokenCreatedAt: serverTimestamp(),
+  })
+  return token
+}
+
+export async function getVolunteerByClaimToken(token) {
+  const q = query(collection(db, 'users'), where('claimToken', '==', token))
+  const snapshot = await getDocs(q)
+  if (snapshot.empty) return null
+  const d = snapshot.docs[0]
+  return { id: d.id, ...d.data() }
+}
+
+export async function claimVolunteerProfile(managedUserId, authUser) {
+  const managedRef = doc(db, 'users', managedUserId)
+  const managedSnap = await getDoc(managedRef)
+  if (!managedSnap.exists()) throw new Error('Profile not found')
+  const managedData = managedSnap.data()
+
+  await updateDoc(managedRef, {
+    uid: authUser.uid,
+    email: authUser.email,
+    displayName: managedData.displayName || authUser.displayName || '',
+    photoURL: authUser.photoURL || '',
+    managed: false,
+    claimed: true,
+    claimedBy: authUser.uid,
+    claimedAt: serverTimestamp(),
+    claimToken: null,
+    updatedAt: serverTimestamp(),
+  })
+
+  const authDocRef = doc(db, 'users', authUser.uid)
+  const authDocSnap = await getDoc(authDocRef)
+  if (authDocSnap.exists() && authDocSnap.id !== managedUserId) {
+    const authData = authDocSnap.data()
+    if (authData.totalHours > 0 || authData.totalPoints > 0) {
+      await updateDoc(managedRef, {
+        totalHours: increment(authData.totalHours || 0),
+        totalPoints: increment(authData.totalPoints || 0),
+      })
+    }
+    await deleteDoc(authDocRef)
+  }
+
+  return { id: managedUserId, ...managedData }
+}
 
 export async function getAttendanceLogs(filters = {}) {
   let constraints = [orderBy('createdAt', 'desc')]
