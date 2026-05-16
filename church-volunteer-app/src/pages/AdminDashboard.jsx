@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import {
   getAllUsers,
@@ -35,6 +36,7 @@ import { Timestamp } from 'firebase/firestore'
 
 export default function AdminDashboard() {
   const { userProfile } = useAuth()
+  const navigate = useNavigate()
   const [tab, setTab] = useState('overview')
   const [users, setUsers] = useState([])
   const [events, setEvents] = useState([])
@@ -701,21 +703,28 @@ export default function AdminDashboard() {
               .map((event) => {
                 const isPast = event.date?.toDate() < new Date()
                 return (
-                  <button
+                  <div
                     key={event.id}
-                    onClick={() => openCheckIn(event.id)}
-                    className={`card text-left hover:shadow-md transition-shadow ${
+                    className={`card hover:shadow-md transition-shadow ${
                       checkInEventId === event.id ? 'ring-2 ring-primary-500' : ''
                     } ${isPast ? 'opacity-75' : ''}`}
                   >
-                    <h3 className="font-semibold">{event.title}</h3>
-                    <p className="text-sm text-gray-500">
-                      {event.date?.toDate().toLocaleDateString('en-US', {
-                        weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
-                      })}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">{event.signupCount || 0} signups</p>
-                  </button>
+                    <button onClick={() => openCheckIn(event.id)} className="w-full text-left">
+                      <h3 className="font-semibold">{event.title}</h3>
+                      <p className="text-sm text-gray-500">
+                        {event.date?.toDate().toLocaleDateString('en-US', {
+                          weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+                        })}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">{event.signupCount || 0} signups</p>
+                    </button>
+                    <button
+                      onClick={() => navigate(`/kiosk/${event.id}`)}
+                      className="mt-2 w-full btn-kiosk !text-sm !py-2 !min-h-[40px]"
+                    >
+                      Open Kiosk Mode
+                    </button>
+                  </div>
                 )
               })}
           </div>
