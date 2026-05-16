@@ -1,51 +1,50 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { useToast } from '../components/ToastProvider'
+import { useConfirm } from '../hooks/useConfirm'
 import {
   getAllUsers, getEvents, getMinistries, getServiceHoursSummary,
-  createEvent, createMinistry, updateEvent, deleteEvent,
-  updateMinistry, deleteMinistry, updateUserRole, getEventSignups,
-  signUpForEvent, cancelSignup,
+  createEvent, createMinistry, deleteEvent, deleteMinistry,
+  updateUserRole, getEventSignups, signUpForEvent, cancelSignup,
   checkIn, checkOut, adminAddVolunteer, releaseVolunteer, markNoShow,
   createManagedVolunteer, deleteVolunteer, assignDepartment, updateVolunteerProfile,
-  getPendingUsersForReviewer,
-  approveUser,
-  rejectUser,
+  generateClaimForVolunteer,
 } from '../services/firestore'
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
-import Notice from '../components/Notice'
+import ClaimQRCode from '../components/ClaimQRCode'
+import CSVImport from '../components/CSVImport'
+import BulkInviteModal from '../components/BulkInviteModal'
 import {
-  Users, Calendar, Clock, Award, Plus, Trash2, Edit3,
-  ChevronDown, ChevronUp, UserCheck, UserX, BarChart3,
-  Search, MinusCircle, XCircle, UserPlus,
+  Users, Calendar, Clock, Award, Plus, Trash2,
+  UserCheck, UserX, BarChart3,
+  Search, MinusCircle, XCircle, UserPlus, Link as LinkIcon, QrCode,
+  Upload, Mail,
 } from 'lucide-react'
 import { Timestamp } from 'firebase/firestore'
 
 export default function AdminDashboard() {
   const { userProfile } = useAuth()
+  const navigate = useNavigate()
+  const toast = useToast()
+  const { confirm, ConfirmDialog } = useConfirm()
   const [tab, setTab] = useState('overview')
   const [users, setUsers] = useState([])
   const [events, setEvents] = useState([])
   const [ministries, setMinistries] = useState([])
   const [serviceHours, setServiceHours] = useState([])
-  const [pendingUsers, setPendingUsers] = useState([])
-  const [approvalLoading, setApprovalLoading] = useState(null)
-  const [userFilter, setUserFilter] = useState('all')
-  const [message, setMessage] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showEventForm, setShowEventForm] = useState(false)
   const [showMinistryForm, setShowMinistryForm] = useState(false)
   const [eventForm, setEventForm] = useState({ title: '', description: '', date: '', location: '', ministryId: '', maxVolunteers: '', durationHours: '' })
   const [ministryForm, setMinistryForm] = useState({ name: '', description: '', leaderName: '', contactEmail: '' })
-
   const [showVolunteerForm, setShowVolunteerForm] = useState(false)
   const [volunteerForm, setVolunteerForm] = useState({ displayName: '', email: '', phone: '' })
-
   const [assignEventId, setAssignEventId] = useState(null)
   const [assignSearch, setAssignSearch] = useState('')
   const [assignSignups, setAssignSignups] = useState([])
-
   const [checkInEventId, setCheckInEventId] = useState(null)
   const [eventSignups, setEventSignups] = useState([])
   const [checkInLoading, setCheckInLoading] = useState(null)
@@ -53,28 +52,19 @@ export default function AdminDashboard() {
   const [showAddVolunteer, setShowAddVolunteer] = useState(false)
   const [volunteerSearch, setVolunteerSearch] = useState('')
   const [bulkLoading, setBulkLoading] = useState(false)
+  const [claimTokenModal, setClaimTokenModal] = useState(null)
+  const [showCSVImport, setShowCSVImport] = useState(false)
+  const [showBulkInvite, setShowBulkInvite] = useState(false)
 
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    const results = await Promise.allSettled([
-      getAllUsers(),
-      getEvents(),
-      getMinistries(),
-      getServiceHoursSummary(),
-      getPendingUsersForReviewer(userProfile),
-    ])
-    const [usersRes, eventsRes, ministriesRes, hoursRes, pendingRes] = results
-    const pick = (res, fallback, label) => {
-      if (res.status === 'fulfilled') return res.value
-      console.error(`Error loading ${label}:`, res.reason)
-      return fallback
-    }
-    setUsers(pick(usersRes, [], 'users'))
-    setEvents(pick(eventsRes, [], 'events'))
-    setMinistries(pick(ministriesRes, [], 'ministries'))
-    setServiceHours(pick(hoursRes, [], 'service hours'))
-    setPendingUsers(pick(pendingRes, [], 'pending users'))
+    try {
+      const [usersData, eventsData, ministriesData, hoursData] = await Promise.all([
+        getAllUsers(), getEvents(), getMinistries(), getServiceHoursSummary(),
+      ])
+      setUsers(usersData); setEvents(eventsData); setMinistries(ministriesData); setServiceHours(hoursData)
+    } catch (err) { console.error('Error loading admin data:', err) }
     setLoading(false)
   }
 
@@ -86,67 +76,30 @@ export default function AdminDashboard() {
     e.preventDefault()
     try {
       await createEvent({ ...eventForm, date: Timestamp.fromDate(new Date(eventForm.date)), maxVolunteers: eventForm.maxVolunteers ? Number(eventForm.maxVolunteers) : null, durationHours: eventForm.durationHours ? Number(eventForm.durationHours) : null })
-      setShowEventForm(false)
-      setEventForm({ title: '', description: '', date: '', location: '', ministryId: '', maxVolunteers: '', durationHours: '' })
-      await loadData()
-    } catch (err) { alert('Failed to create event') }
+      setShowEventForm(false); setEventForm({ title: '', description: '', date: '', location: '', ministryId: '', maxVolunteers: '', durationHours: '' })
+      await loadData(); toast.success('Event created')
+    } catch (err) { toast.error('Failed to create event') }
   }
 
-  async function handleDeleteEvent(id) { if (!confirm('Delete this event?')) return; await deleteEvent(id); await loadData() }
+  async function handleDeleteEvent(id) {
+    if (!await confirm({ title: 'Delete Event', message: 'This will remove the event and all signups.', confirmLabel: 'Delete', danger: true })) return
+    await deleteEvent(id); await loadData()
+  }
 
   async function handleCreateMinistry(e) {
     e.preventDefault()
     try {
-      await createMinistry(ministryForm)
-      setShowMinistryForm(false)
-      setMinistryForm({ name: '', description: '', leaderName: '', contactEmail: '' })
-      await loadData()
-    } catch (err) { alert('Failed to create ministry') }
+      await createMinistry(ministryForm); setShowMinistryForm(false); setMinistryForm({ name: '', description: '', leaderName: '', contactEmail: '' })
+      await loadData(); toast.success('Ministry created')
+    } catch (err) { toast.error('Failed to create ministry') }
   }
 
-  async function handleDeleteMinistry(id) { if (!confirm('Delete this ministry?')) return; await deleteMinistry(id); await loadData() }
+  async function handleDeleteMinistry(id) {
+    if (!await confirm({ title: 'Delete Ministry', message: 'This will remove the ministry permanently.', confirmLabel: 'Delete', danger: true })) return
+    await deleteMinistry(id); await loadData()
+  }
+
   async function handleRoleChange(userId, newRole) { await updateUserRole(userId, newRole); await loadData() }
-
-  async function handleApproveUser(userId) {
-    setApprovalLoading(userId)
-    setMessage(null)
-    try {
-      await approveUser(userId, userProfile.uid)
-    } catch (err) {
-      console.error('approveUser failed:', err)
-      setMessage({ type: 'error', text: 'Failed to approve user.' })
-      setApprovalLoading(null)
-      return
-    }
-    setMessage({ type: 'success', text: 'User approved.' })
-    try {
-      await loadData()
-    } catch (err) {
-      // keep the success message
-    }
-    setApprovalLoading(null)
-  }
-
-  async function handleRejectUser(userId) {
-    const note = window.prompt('Optional rejection note') || ''
-    setApprovalLoading(userId)
-    setMessage(null)
-    try {
-      await rejectUser(userId, userProfile.uid, note)
-    } catch (err) {
-      console.error('rejectUser failed:', err)
-      setMessage({ type: 'error', text: 'Failed to reject user.' })
-      setApprovalLoading(null)
-      return
-    }
-    setMessage({ type: 'success', text: 'User rejected.' })
-    try {
-      await loadData()
-    } catch (err) {
-      // keep the success message
-    }
-    setApprovalLoading(null)
-  }
 
   async function openCheckIn(eventId) {
     setCheckInEventId(eventId); setManualHoursMap({}); setShowAddVolunteer(false); setVolunteerSearch('')
@@ -175,11 +128,10 @@ export default function AdminDashboard() {
   }
 
   async function handleBulkCheckOut() {
-    if (!confirm('Check out all checked-in volunteers?')) return
+    if (!await confirm({ title: 'Check Out All', message: 'Check out all currently checked-in volunteers?', confirmLabel: 'Check Out All' })) return
     setBulkLoading(true)
     for (const s of eventSignups.filter((s) => s.status === 'checked_in')) {
-      const manual = manualHoursMap[s.id]
-      const hours = manual !== undefined && manual !== '' ? Number(manual) : null
+      const manual = manualHoursMap[s.id]; const hours = manual !== undefined && manual !== '' ? Number(manual) : null
       await checkOut(s.id, s.userId, hours)
     }
     setManualHoursMap({}); await refreshSignups(); setBulkLoading(false); await loadData()
@@ -187,7 +139,7 @@ export default function AdminDashboard() {
 
   async function handleAddWalkIn(userId, displayName) {
     try { await adminAddVolunteer(checkInEventId, userId, displayName); setVolunteerSearch(''); setShowAddVolunteer(false); await refreshSignups(); await loadData() }
-    catch (err) { alert(err.message) }
+    catch (err) { toast.error(err.message) }
   }
 
   function setManualHours(signupId, value) { setManualHoursMap((prev) => ({ ...prev, [signupId]: value })) }
@@ -196,26 +148,22 @@ export default function AdminDashboard() {
 
   async function openAssignEvent(eventId) {
     if (assignEventId === eventId) { setAssignEventId(null); return }
-    setAssignEventId(eventId)
-    setAssignSearch('')
-    const signups = await getEventSignups(eventId)
-    setAssignSignups(signups)
+    setAssignEventId(eventId); setAssignSearch('')
+    const signups = await getEventSignups(eventId); setAssignSignups(signups)
   }
 
   async function handleAssignVolunteer(eventId, userId, displayName) {
-    try {
-      await signUpForEvent(eventId, userId, displayName)
-      const signups = await getEventSignups(eventId)
-      setAssignSignups(signups)
-      await loadData()
-    } catch (err) { alert(err.message) }
+    try { await signUpForEvent(eventId, userId, displayName); const signups = await getEventSignups(eventId); setAssignSignups(signups); await loadData() }
+    catch (err) { toast.error(err.message) }
   }
 
   async function handleRemoveFromEvent(signupId, eventId) {
-    await cancelSignup(signupId, eventId)
-    const signups = await getEventSignups(eventId)
-    setAssignSignups(signups)
-    await loadData()
+    await cancelSignup(signupId, eventId); const signups = await getEventSignups(eventId); setAssignSignups(signups); await loadData()
+  }
+
+  async function handleGenerateClaimLink(userId) {
+    try { const token = await generateClaimForVolunteer(userId); setClaimTokenModal({ userId, token }); await loadData(); toast.success('Claim link generated') }
+    catch (err) { toast.error('Failed to generate claim link') }
   }
 
   const tabs = [
@@ -242,46 +190,6 @@ export default function AdminDashboard() {
 
       {tab === 'overview' && (
         <div className="space-y-6">
-          {message && <Notice type={message.type}>{message.text}</Notice>}
-          <div className="card">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-lg">Pending Approvals</h2>
-              <span className="badge bg-blue-100 text-blue-700">{pendingUsers.length} pending</span>
-            </div>
-            {pendingUsers.length === 0 ? (
-              <p className="text-sm text-gray-500">No pending users need review.</p>
-            ) : (
-              <div className="space-y-3">
-                {pendingUsers.map((u) => (
-                  <div key={u.id} className="flex flex-col gap-3 rounded-lg border border-gray-100 p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="font-medium">{u.displayName || u.email}</p>
-                      <p className="text-sm text-gray-500">{u.email}</p>
-                      <p className="text-xs text-gray-400">
-                        Requested ministries: {(u.requestedMinistryIds || []).map(getMinistryName).join(', ') || 'None selected'}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        className="btn-primary text-sm"
-                        disabled={approvalLoading === u.id}
-                        onClick={() => handleApproveUser(u.id)}
-                      >
-                        {approvalLoading === u.id ? 'Approving...' : 'Approve'}
-                      </button>
-                      <button
-                        className="btn-secondary text-sm"
-                        disabled={approvalLoading === u.id}
-                        onClick={() => handleRejectUser(u.id)}
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard title="Total Volunteers" value={totalVolunteers} icon={Users} color="primary" />
             <StatCard title="Total Hours" value={formatHours(totalHours)} icon={Clock} color="green" />
@@ -325,68 +233,23 @@ export default function AdminDashboard() {
               <div className="flex space-x-2"><button type="submit" className="btn-primary">Create Event</button><button type="button" onClick={() => setShowEventForm(false)} className="btn-secondary">Cancel</button></div>
             </form>
           )}
-
           <div className="space-y-3">
             {events.map((event) => (
               <div key={event.id} className="card p-0 overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3">
-                  <div>
-                    <p className="font-medium">{event.title}</p>
-                    <p className="text-xs text-gray-500">
-                      {event.date?.toDate().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-                      {event.ministryId && ` \u00B7 ${getMinistryName(event.ministryId)}`}
-                    </p>
-                  </div>
+                  <div><p className="font-medium">{event.title}</p><p className="text-xs text-gray-500">{event.date?.toDate().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{event.ministryId && ` · ${getMinistryName(event.ministryId)}`}</p></div>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-400">{event.signupCount || 0} volunteers</span>
-                    <button onClick={() => openAssignEvent(event.id)} className={`btn-secondary text-xs py-1 px-3 flex items-center space-x-1 ${assignEventId === event.id ? 'ring-2 ring-primary-400' : ''}`}>
-                      <UserPlus size={12} /><span>Assign</span>
-                    </button>
-                    <button onClick={() => { setTab('checkin'); openCheckIn(event.id) }} className="btn-primary text-xs py-1 px-3">Check-In</button>
+                    <button onClick={() => openAssignEvent(event.id)} className={`btn-secondary text-xs py-1 px-3 flex items-center space-x-1 ${assignEventId === event.id ? 'ring-2 ring-primary-400' : ''}`}><UserPlus size={12} /><span>Assign</span></button>
+                    <button onClick={() => navigate(`/kiosk/${event.id}`)} className="btn-primary text-xs py-1 px-3">Kiosk</button>
                     <button onClick={() => handleDeleteEvent(event.id)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>
                   </div>
                 </div>
-
                 {assignEventId === event.id && (
                   <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
-                    <div className="flex items-center gap-2 mb-3">
-                      <div className="relative flex-1">
-                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                        <input type="text" className="input pl-9 text-sm" placeholder="Search volunteers to add..." value={assignSearch} onChange={(e) => setAssignSearch(e.target.value)} />
-                      </div>
-                    </div>
-                    {assignSearch.length >= 2 && (
-                      <div className="mb-3 max-h-40 overflow-y-auto space-y-1">
-                        {users.filter((u) => (u.displayName || '').toLowerCase().includes(assignSearch.toLowerCase()) && !assignSignups.some((s) => s.userId === u.id)).slice(0, 8).map((u) => (
-                          <button key={u.id} onClick={() => { handleAssignVolunteer(event.id, u.id, u.displayName); setAssignSearch('') }} className="w-full flex items-center justify-between p-2 bg-white rounded hover:bg-blue-50 text-sm">
-                            <span>{u.displayName || u.email}{u.managed && <span className="ml-1 text-xs text-gray-400">(no account)</span>}</span>
-                            <span className="text-primary-600 text-xs font-medium">+ Add to Event</span>
-                          </button>
-                        ))}
-                        {users.filter((u) => (u.displayName || '').toLowerCase().includes(assignSearch.toLowerCase()) && !assignSignups.some((s) => s.userId === u.id)).length === 0 && (
-                          <p className="text-xs text-gray-400 py-2 text-center">No matching volunteers</p>
-                        )}
-                      </div>
-                    )}
-                    {assignSignups.length > 0 && (
-                      <div>
-                        <p className="text-xs font-medium text-gray-500 mb-2">Assigned volunteers ({assignSignups.length})</p>
-                        <div className="space-y-1">
-                          {assignSignups.map((s) => (
-                            <div key={s.id} className="flex items-center justify-between p-2 bg-white rounded text-sm">
-                              <div className="flex items-center gap-2">
-                                <span>{s.userName}</span>
-                                {s.department && <span className="badge bg-primary-100 text-primary-700 text-xs">{getDeptInfo(s.department)?.icon} {getDeptInfo(s.department)?.name}</span>}
-                                <span className={`badge text-xs ${s.status === 'checked_in' ? 'bg-green-100 text-green-700' : s.status === 'checked_out' ? 'bg-gray-100 text-gray-600' : 'bg-blue-100 text-blue-700'}`}>{s.status.replace('_', ' ')}</span>
-                              </div>
-                              {s.status === 'signed_up' && (
-                                <button onClick={() => handleRemoveFromEvent(s.id, event.id)} className="text-gray-400 hover:text-red-500 p-1" title="Remove from event"><XCircle size={14} /></button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    <div className="relative mb-3"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" className="input pl-9 text-sm" placeholder="Search volunteers to add..." value={assignSearch} onChange={(e) => setAssignSearch(e.target.value)} /></div>
+                    {assignSearch.length >= 2 && (<div className="mb-3 max-h-40 overflow-y-auto space-y-1">{users.filter((u) => (u.displayName || '').toLowerCase().includes(assignSearch.toLowerCase()) && !assignSignups.some((s) => s.userId === u.id)).slice(0, 8).map((u) => (<button key={u.id} onClick={() => { handleAssignVolunteer(event.id, u.id, u.displayName); setAssignSearch('') }} className="w-full flex items-center justify-between p-2 bg-white rounded hover:bg-blue-50 text-sm"><span>{u.displayName || u.email}{u.managed && <span className="ml-1 text-xs text-gray-400">(no account)</span>}</span><span className="text-primary-600 text-xs font-medium">+ Add</span></button>))}</div>)}
+                    {assignSignups.length > 0 && (<div><p className="text-xs font-medium text-gray-500 mb-2">Assigned ({assignSignups.length})</p><div className="space-y-1">{assignSignups.map((s) => (<div key={s.id} className="flex items-center justify-between p-2 bg-white rounded text-sm"><div className="flex items-center gap-2"><span>{s.userName}</span>{s.department && <span className="badge bg-primary-100 text-primary-700 text-xs">{getDeptInfo(s.department)?.icon} {getDeptInfo(s.department)?.name}</span>}<span className={`badge text-xs ${s.status === 'checked_in' ? 'bg-green-100 text-green-700' : s.status === 'checked_out' ? 'bg-gray-100 text-gray-600' : 'bg-blue-100 text-blue-700'}`}>{s.status.replace('_', ' ')}</span></div>{s.status === 'signed_up' && (<button onClick={() => handleRemoveFromEvent(s.id, event.id)} className="text-gray-400 hover:text-red-500 p-1"><XCircle size={14} /></button>)}</div>))}</div></div>)}
                   </div>
                 )}
               </div>
@@ -397,120 +260,80 @@ export default function AdminDashboard() {
 
       {tab === 'ministries' && (
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="font-semibold text-lg">Manage Ministries</h2>
-            <button onClick={() => setShowMinistryForm(!showMinistryForm)} className="btn-primary flex items-center space-x-1"><Plus size={16} /><span>New Ministry</span></button>
-          </div>
-          {showMinistryForm && (
-            <form onSubmit={handleCreateMinistry} className="card space-y-4">
-              <h3 className="font-semibold">Create Ministry</h3>
-              <div className="grid sm:grid-cols-2 gap-4">
-                <div><label className="label">Name *</label><input className="input" required value={ministryForm.name} onChange={(e) => setMinistryForm({ ...ministryForm, name: e.target.value })} /></div>
-                <div><label className="label">Leader Name</label><input className="input" value={ministryForm.leaderName} onChange={(e) => setMinistryForm({ ...ministryForm, leaderName: e.target.value })} /></div>
-                <div className="sm:col-span-2"><label className="label">Description</label><textarea className="input" rows={2} value={ministryForm.description} onChange={(e) => setMinistryForm({ ...ministryForm, description: e.target.value })} /></div>
-                <div><label className="label">Contact Email</label><input type="email" className="input" value={ministryForm.contactEmail} onChange={(e) => setMinistryForm({ ...ministryForm, contactEmail: e.target.value })} /></div>
-              </div>
-              <div className="flex space-x-2"><button type="submit" className="btn-primary">Create Ministry</button><button type="button" onClick={() => setShowMinistryForm(false)} className="btn-secondary">Cancel</button></div>
-            </form>
-          )}
-          <div className="grid gap-4 md:grid-cols-2">
-            {ministries.map((m) => (
-              <div key={m.id} className="card flex justify-between items-start">
-                <div><h3 className="font-semibold">{m.name}</h3>{m.description && <p className="text-sm text-gray-500 mt-1">{m.description}</p>}<p className="text-xs text-gray-400 mt-1">{m.leaderName && `Led by ${m.leaderName}`}{m.memberCount ? ` \u00B7 ${m.memberCount} members` : ''}</p></div>
-                <button onClick={() => handleDeleteMinistry(m.id)} className="text-red-500 hover:text-red-700 p-1"><Trash2 size={14} /></button>
-              </div>
-            ))}
-          </div>
+          <div className="flex justify-between items-center"><h2 className="font-semibold text-lg">Manage Ministries</h2><button onClick={() => setShowMinistryForm(!showMinistryForm)} className="btn-primary flex items-center space-x-1"><Plus size={16} /><span>New Ministry</span></button></div>
+          {showMinistryForm && (<form onSubmit={handleCreateMinistry} className="card space-y-4"><h3 className="font-semibold">Create Ministry</h3><div className="grid sm:grid-cols-2 gap-4"><div><label className="label">Name *</label><input className="input" required value={ministryForm.name} onChange={(e) => setMinistryForm({ ...ministryForm, name: e.target.value })} /></div><div><label className="label">Leader Name</label><input className="input" value={ministryForm.leaderName} onChange={(e) => setMinistryForm({ ...ministryForm, leaderName: e.target.value })} /></div><div className="sm:col-span-2"><label className="label">Description</label><textarea className="input" rows={2} value={ministryForm.description} onChange={(e) => setMinistryForm({ ...ministryForm, description: e.target.value })} /></div><div><label className="label">Contact Email</label><input type="email" className="input" value={ministryForm.contactEmail} onChange={(e) => setMinistryForm({ ...ministryForm, contactEmail: e.target.value })} /></div></div><div className="flex space-x-2"><button type="submit" className="btn-primary">Create Ministry</button><button type="button" onClick={() => setShowMinistryForm(false)} className="btn-secondary">Cancel</button></div></form>)}
+          <div className="grid gap-4 md:grid-cols-2">{ministries.map((m) => (<div key={m.id} className="card flex justify-between items-start"><div><h3 className="font-semibold">{m.name}</h3>{m.description && <p className="text-sm text-gray-500 mt-1">{m.description}</p>}<p className="text-xs text-gray-400 mt-1">{m.leaderName && `Led by ${m.leaderName}`}{m.memberCount ? ` · ${m.memberCount} members` : ''}</p></div><button onClick={() => handleDeleteMinistry(m.id)} className="text-red-500 hover:text-red-700 p-1"><Trash2 size={14} /></button></div>))}</div>
         </div>
       )}
 
-      {tab === 'users' && (() => {
-        const filteredUsers = users.filter((u) => {
-          const status = u.approvalStatus || (u.role === 'admin' || u.role === 'ministry_leader' ? 'approved' : 'pending')
-          if (userFilter === 'pending') return status === 'pending'
-          if (userFilter === 'approved') return status === 'approved'
-          if (userFilter === 'rejected') return status === 'rejected'
-          if (userFilter === 'managed') return u.managed === true
-          return true
-        })
-        return (
+      {tab === 'users' && (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <h2 className="font-semibold text-lg">Manage Users ({filteredUsers.length})</h2>
-            <select
-              className="input text-sm"
-              value={userFilter}
-              onChange={(e) => setUserFilter(e.target.value)}
-            >
-              <option value="all">All</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-              <option value="managed">Managed volunteers</option>
-            </select>
-            <button onClick={() => setShowVolunteerForm(!showVolunteerForm)} className="btn-primary flex items-center space-x-1 ml-auto"><UserPlus size={16} /><span>Add Volunteer</span></button>
+          <div className="flex flex-wrap justify-between items-center gap-2">
+            <h2 className="font-semibold text-lg">Manage Users ({users.length})</h2>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => setShowCSVImport(!showCSVImport)} className="btn-secondary flex items-center space-x-1 text-sm"><Upload size={14} /><span>Import CSV</span></button>
+              <button onClick={() => setShowBulkInvite(true)} className="btn-secondary flex items-center space-x-1 text-sm"><Mail size={14} /><span>Bulk Invite</span></button>
+              <button onClick={() => setShowVolunteerForm(!showVolunteerForm)} className="btn-primary flex items-center space-x-1 text-sm"><UserPlus size={14} /><span>Add Volunteer</span></button>
+            </div>
           </div>
 
+          {showCSVImport && <CSVImport onComplete={() => { setShowCSVImport(false); loadData() }} />}
+          {showBulkInvite && <BulkInviteModal volunteers={users} onClose={() => { setShowBulkInvite(false); loadData() }} />}
+
           {showVolunteerForm && (
-            <form onSubmit={async (e) => { e.preventDefault(); if (!volunteerForm.displayName.trim()) return alert('Name is required'); try { await createManagedVolunteer(volunteerForm, userProfile?.uid); setVolunteerForm({ displayName: '', email: '', phone: '' }); setShowVolunteerForm(false); await loadData() } catch (err) { alert('Failed to create volunteer') } }} className="card space-y-4">
+            <form onSubmit={async (e) => { e.preventDefault(); if (!volunteerForm.displayName.trim()) return toast.error('Name is required'); try { await createManagedVolunteer(volunteerForm); setVolunteerForm({ displayName: '', email: '', phone: '' }); setShowVolunteerForm(false); await loadData(); toast.success('Volunteer added') } catch (err) { toast.error('Failed to create volunteer') } }} className="card space-y-4">
               <h3 className="font-semibold">Add Volunteer (no account needed)</h3>
-              <p className="text-xs text-gray-500">Create a profile for someone who doesn't have or want their own login.</p>
               <div className="grid sm:grid-cols-3 gap-4">
                 <div><label className="label">Name *</label><input className="input" required value={volunteerForm.displayName} onChange={(e) => setVolunteerForm({ ...volunteerForm, displayName: e.target.value })} placeholder="John Doe" /></div>
-                <div><label className="label">Email (optional)</label><input type="email" className="input" value={volunteerForm.email} onChange={(e) => setVolunteerForm({ ...volunteerForm, email: e.target.value })} placeholder="john@email.com" /></div>
-                <div><label className="label">Phone (optional)</label><input type="tel" className="input" value={volunteerForm.phone} onChange={(e) => setVolunteerForm({ ...volunteerForm, phone: e.target.value })} placeholder="(555) 123-4567" /></div>
+                <div><label className="label">Email</label><input type="email" className="input" value={volunteerForm.email} onChange={(e) => setVolunteerForm({ ...volunteerForm, email: e.target.value })} placeholder="john@email.com" /></div>
+                <div><label className="label">Phone</label><input type="tel" className="input" value={volunteerForm.phone} onChange={(e) => setVolunteerForm({ ...volunteerForm, phone: e.target.value })} placeholder="(555) 123-4567" /></div>
               </div>
               <div className="flex space-x-2"><button type="submit" className="btn-primary">Add Volunteer</button><button type="button" onClick={() => setShowVolunteerForm(false)} className="btn-secondary">Cancel</button></div>
             </form>
           )}
 
-          <div className="card p-0 overflow-hidden">
+          <div className="card p-0 overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3 hidden sm:table-cell">Email</th><th className="text-right px-4 py-3">Hours</th><th className="text-left px-4 py-3">Role</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3 hidden md:table-cell">Department</th><th className="text-right px-4 py-3 w-16"></th></tr></thead>
+              <thead className="bg-gray-50 border-b"><tr><th className="text-left px-4 py-3">Name</th><th className="text-left px-4 py-3 hidden sm:table-cell">Email</th><th className="text-right px-4 py-3">Hours</th><th className="text-left px-4 py-3">Role</th><th className="text-left px-4 py-3 hidden md:table-cell">Department</th><th className="text-right px-4 py-3 w-24"></th></tr></thead>
               <tbody className="divide-y">
-                {filteredUsers.map((u) => (
+                {users.map((u) => (
                   <tr key={u.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3"><div><span className="font-medium">{u.displayName || 'Unknown'}</span>{u.managed && <span className="ml-2 badge bg-gray-100 text-gray-500">No account</span>}</div></td>
+                    <td className="px-4 py-3"><span className="font-medium">{u.displayName || 'Unknown'}</span>{u.managed && <span className="ml-2 badge bg-gray-100 text-gray-500">No account</span>}</td>
                     <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{u.email || '-'}</td>
                     <td className="px-4 py-3 text-right">{formatHours(u.totalHours || 0)}</td>
-                    <td className="px-4 py-3"><select className="input py-1 text-xs w-auto" value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}><option value="volunteer">Volunteer</option><option value="ministry_leader">Ministry Leader</option><option value="admin">Admin</option></select></td>
-                    <td className="px-4 py-3">
-                      <span className="badge bg-gray-100 text-gray-700 capitalize">
-                        {u.approvalStatus || (u.role === 'admin' || u.role === 'ministry_leader' ? 'approved' : 'pending')}
-                      </span>
+                    <td className="px-4 py-3"><select className="input py-1 text-xs w-auto" value={u.role} onChange={(e) => handleRoleChange(u.id, e.target.value)}><option value="volunteer">Volunteer</option><option value="ministry_leader">Leader</option><option value="admin">Admin</option></select></td>
+                    <td className="px-4 py-3 hidden md:table-cell">{u.role === 'ministry_leader' ? (<select className="input py-1 text-xs w-auto" value={u.assignedDepartment || ''} onChange={async (e) => { await updateVolunteerProfile(u.id, { assignedDepartment: e.target.value || null }); await loadData() }}><option value="">None</option>{DEPARTMENTS.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}</select>) : '-'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {u.managed && !u.claimToken && (<button onClick={() => handleGenerateClaimLink(u.id)} className="text-gray-400 hover:text-primary-600 p-1" title="Generate claim link"><LinkIcon size={14} /></button>)}
+                        {u.managed && u.claimToken && (<button onClick={() => setClaimTokenModal({ userId: u.id, token: u.claimToken })} className="text-primary-600 hover:text-primary-700 p-1" title="Show QR code"><QrCode size={14} /></button>)}
+                        {u.managed && (<button onClick={async () => { if (!await confirm({ title: 'Delete Volunteer', message: `Remove ${u.displayName}?`, confirmLabel: 'Delete', danger: true })) return; await deleteVolunteer(u.id); await loadData(); toast.success(`${u.displayName} removed`) }} className="text-gray-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>)}
+                      </div>
                     </td>
-                    <td className="px-4 py-3 hidden md:table-cell">
-                      {u.role === 'ministry_leader' ? (
-                        <select className="input py-1 text-xs w-auto" value={u.assignedDepartment || ''} onChange={async (e) => { await updateVolunteerProfile(u.id, { assignedDepartment: e.target.value || null }); await loadData() }}>
-                          <option value="">None</option>
-                          {DEPARTMENTS.map((d) => (<option key={d.id} value={d.id}>{d.name}</option>))}
-                        </select>
-                      ) : (<span className="text-xs text-gray-400">-</span>)}
-                    </td>
-                    <td className="px-4 py-3 text-right">{u.managed && (<button onClick={async () => { if (!confirm(`Delete ${u.displayName}?`)) return; await deleteVolunteer(u.id); await loadData() }} className="text-gray-400 hover:text-red-500 p-1" title="Delete volunteer"><Trash2 size={14} /></button>)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </div>
-        )
-      })()}
+      )}
 
       {tab === 'checkin' && (
         <div className="space-y-4">
           <h2 className="font-semibold text-lg">Event Check-In</h2>
-          <p className="text-sm text-gray-500">Select an event to manage volunteer attendance</p>
-
+          <p className="text-sm text-gray-500">Select an event to manage attendance, or open Kiosk Mode</p>
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {events.filter((e) => { const d = e.date?.toDate(); const now = new Date(); return d && d >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) }).sort((a, b) => b.date.toDate() - a.date.toDate()).map((event) => {
+            {events.filter((e) => { const d = e.date?.toDate(); return d && d >= new Date(Date.now() - 7 * 86400000) }).sort((a, b) => b.date.toDate() - a.date.toDate()).map((event) => {
               const isPast = event.date?.toDate() < new Date()
               return (
-                <button key={event.id} onClick={() => openCheckIn(event.id)} className={`card text-left hover:shadow-md transition-shadow ${checkInEventId === event.id ? 'ring-2 ring-primary-500' : ''} ${isPast ? 'opacity-75' : ''}`}>
-                  <h3 className="font-semibold">{event.title}</h3>
-                  <p className="text-sm text-gray-500">{event.date?.toDate().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
-                  <p className="text-xs text-gray-400 mt-1">{event.signupCount || 0} signups</p>
-                </button>
+                <div key={event.id} className={`card hover:shadow-md transition-shadow ${checkInEventId === event.id ? 'ring-2 ring-primary-500' : ''} ${isPast ? 'opacity-75' : ''}`}>
+                  <button onClick={() => openCheckIn(event.id)} className="w-full text-left">
+                    <h3 className="font-semibold">{event.title}</h3>
+                    <p className="text-sm text-gray-500">{event.date?.toDate().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                    <p className="text-xs text-gray-400 mt-1">{event.signupCount || 0} signups</p>
+                  </button>
+                  <button onClick={() => navigate(`/kiosk/${event.id}`)} className="mt-2 w-full btn-kiosk !text-sm !py-2 !min-h-[40px]">Open Kiosk Mode</button>
+                </div>
               )
             })}
           </div>
@@ -520,96 +343,51 @@ export default function AdminDashboard() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                 <div>
                   <h3 className="font-semibold text-lg">Attendance</h3>
-                  <p className="text-xs text-gray-400">
-                    {eventSignups.filter((s) => s.status === 'checked_in').length} checked in
-                    {' \u00B7 '}{eventSignups.filter((s) => s.status === 'checked_out').length} checked out
-                    {' \u00B7 '}{eventSignups.filter((s) => s.status === 'signed_up').length} pending
-                    {eventSignups.filter((s) => s.status === 'released').length > 0 && ` \u00B7 ${eventSignups.filter((s) => s.status === 'released').length} released`}
-                    {eventSignups.filter((s) => s.status === 'no_show').length > 0 && ` \u00B7 ${eventSignups.filter((s) => s.status === 'no_show').length} no-show`}
-                  </p>
+                  <p className="text-xs text-gray-400">{eventSignups.filter((s) => s.status === 'checked_in').length} in {' · '}{eventSignups.filter((s) => s.status === 'checked_out').length} out {' · '}{eventSignups.filter((s) => s.status === 'signed_up').length} pending</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button onClick={() => setShowAddVolunteer(!showAddVolunteer)} className="btn-secondary text-xs py-1.5 px-3 flex items-center space-x-1"><UserPlus size={12} /><span>Add Walk-In</span></button>
-                  {eventSignups.some((s) => s.status === 'signed_up') && (
-                    <button onClick={handleBulkCheckIn} disabled={bulkLoading} className="btn-primary text-xs py-1.5 px-3 flex items-center space-x-1"><UserCheck size={12} /><span>{bulkLoading ? '...' : 'Check All In'}</span></button>
-                  )}
-                  {eventSignups.some((s) => s.status === 'checked_in') && (
-                    <button onClick={handleBulkCheckOut} disabled={bulkLoading} className="btn-secondary text-xs py-1.5 px-3 flex items-center space-x-1"><UserX size={12} /><span>{bulkLoading ? '...' : 'Check All Out'}</span></button>
-                  )}
+                  {eventSignups.some((s) => s.status === 'signed_up') && (<button onClick={handleBulkCheckIn} disabled={bulkLoading} className="btn-primary text-xs py-1.5 px-3 flex items-center space-x-1"><UserCheck size={12} /><span>{bulkLoading ? '...' : 'Check All In'}</span></button>)}
+                  {eventSignups.some((s) => s.status === 'checked_in') && (<button onClick={handleBulkCheckOut} disabled={bulkLoading} className="btn-secondary text-xs py-1.5 px-3 flex items-center space-x-1"><UserX size={12} /><span>{bulkLoading ? '...' : 'Check All Out'}</span></button>)}
                 </div>
               </div>
-
-              {showAddVolunteer && (
-                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm font-medium text-blue-800 mb-2">Add a walk-in volunteer</p>
-                  <div className="relative">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input type="text" className="input pl-9 text-sm" placeholder="Search by name..." value={volunteerSearch} onChange={(e) => setVolunteerSearch(e.target.value)} />
-                  </div>
-                  {volunteerSearch.length >= 2 && (
-                    <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
-                      {users.filter((u) => (u.displayName || '').toLowerCase().includes(volunteerSearch.toLowerCase()) && !eventSignups.some((s) => s.userId === u.id)).slice(0, 8).map((u) => (
-                        <button key={u.id} onClick={() => handleAddWalkIn(u.id, u.displayName)} className="w-full flex items-center justify-between p-2 bg-white rounded hover:bg-gray-50 text-sm">
-                          <span>{u.displayName || u.email}{u.managed && <span className="ml-1 text-xs text-gray-400">(no account)</span>}</span>
-                          <span className="text-primary-600 text-xs font-medium">+ Add & Check In</span>
-                        </button>
-                      ))}
-                      {users.filter((u) => (u.displayName || '').toLowerCase().includes(volunteerSearch.toLowerCase()) && !eventSignups.some((s) => s.userId === u.id)).length === 0 && (
-                        <p className="text-xs text-gray-400 py-2 text-center">No matching volunteers found</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {eventSignups.length === 0 ? (
-                <p className="text-gray-400 text-sm text-center py-4">No signups for this event</p>
-              ) : (
-                <div className="space-y-2">
-                  {eventSignups.sort((a, b) => { const order = { checked_in: 0, signed_up: 1, checked_out: 2, released: 3, no_show: 4 }; return (order[a.status] || 5) - (order[b.status] || 5) }).map((signup) => (
-                    <div key={signup.id} className={`p-3 rounded-lg ${signup.status === 'checked_in' ? 'bg-green-50 border border-green-200' : signup.status === 'no_show' ? 'bg-red-50 border border-red-100' : signup.status === 'released' ? 'bg-yellow-50 border border-yellow-100' : 'bg-gray-50'}`}>
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="min-w-0">
-                            <p className="font-medium text-sm">{signup.userName}</p>
-                            <p className="text-xs text-gray-400 capitalize">
-                              {signup.status.replace('_', ' ')}
-                              {signup.status === 'checked_in' && signup.checkedInAt && (<span> since {signup.checkedInAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>)}
-                            </p>
-                          </div>
-                          {(signup.status === 'signed_up' || signup.status === 'checked_in') && (
-                            <select className="input py-1 text-xs w-auto" value={signup.department || ''} onChange={async (e) => { await assignDepartment(signup.id, e.target.value); await refreshSignups() }}>
-                              <option value="">Assign dept...</option>
-                              {DEPARTMENTS.map((d) => (<option key={d.id} value={d.id}>{d.icon} {d.name}</option>))}
-                            </select>
-                          )}
-                          {(signup.status === 'checked_out' || signup.status === 'released') && signup.department && (
-                            <span className="badge bg-primary-100 text-primary-700 text-xs">{getDeptInfo(signup.department)?.icon} {getDeptInfo(signup.department)?.name}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          {signup.status === 'signed_up' && (<>
-                            <button onClick={() => handleCheckIn(signup.id)} disabled={checkInLoading === signup.id} className="btn-primary text-xs py-1 px-3 flex items-center space-x-1"><UserCheck size={12} /><span>{checkInLoading === signup.id ? '...' : 'Check In'}</span></button>
-                            <button onClick={() => handleNoShow(signup.id)} disabled={checkInLoading === signup.id} className="text-gray-400 hover:text-red-500 p-1" title="Mark as no-show"><XCircle size={16} /></button>
-                          </>)}
-                          {signup.status === 'checked_in' && (<>
-                            <input type="number" step="0.25" min="0" className="input py-1 text-xs w-16 text-center" placeholder="hrs" value={manualHoursMap[signup.id] || ''} onChange={(e) => setManualHours(signup.id, e.target.value)} title="Override hours (leave blank for auto-calculate)" />
-                            <button onClick={() => handleCheckOut(signup.id, signup.userId)} disabled={checkInLoading === signup.id} className="btn-primary text-xs py-1 px-3 flex items-center space-x-1"><UserX size={12} /><span>{checkInLoading === signup.id ? '...' : 'Check Out'}</span></button>
-                            <button onClick={() => handleRelease(signup.id)} disabled={checkInLoading === signup.id} className="text-gray-400 hover:text-amber-500 p-1" title="Release (not needed, 0 hours)"><MinusCircle size={16} /></button>
-                          </>)}
-                          {signup.status === 'checked_out' && (<span className="text-xs text-green-600 font-medium">{formatHours(signup.hoursLogged)} logged</span>)}
-                          {signup.status === 'released' && (<span className="text-xs text-amber-600 font-medium">Released</span>)}
-                          {signup.status === 'no_show' && (<span className="text-xs text-red-500 font-medium">No-show</span>)}
-                        </div>
+              {showAddVolunteer && (<div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg"><div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" className="input pl-9 text-sm" placeholder="Search by name..." value={volunteerSearch} onChange={(e) => setVolunteerSearch(e.target.value)} /></div>{volunteerSearch.length >= 2 && (<div className="mt-2 max-h-40 overflow-y-auto space-y-1">{users.filter((u) => (u.displayName || '').toLowerCase().includes(volunteerSearch.toLowerCase()) && !eventSignups.some((s) => s.userId === u.id)).slice(0, 8).map((u) => (<button key={u.id} onClick={() => handleAddWalkIn(u.id, u.displayName)} className="w-full flex items-center justify-between p-2 bg-white rounded hover:bg-gray-50 text-sm"><span>{u.displayName || u.email}</span><span className="text-primary-600 text-xs font-medium">+ Add & Check In</span></button>))}</div>)}</div>)}
+              {eventSignups.length === 0 ? (<p className="text-gray-400 text-sm text-center py-4">No signups</p>) : (
+                <div className="space-y-2">{eventSignups.sort((a, b) => { const o = { checked_in: 0, signed_up: 1, checked_out: 2, released: 3, no_show: 4 }; return (o[a.status] || 5) - (o[b.status] || 5) }).map((signup) => (
+                  <div key={signup.id} className={`p-3 rounded-lg ${signup.status === 'checked_in' ? 'bg-green-50 border border-green-200' : signup.status === 'no_show' ? 'bg-red-50 border border-red-100' : signup.status === 'released' ? 'bg-yellow-50 border border-yellow-100' : 'bg-gray-50'}`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="min-w-0"><p className="font-medium text-sm">{signup.userName}</p><p className="text-xs text-gray-400 capitalize">{signup.status.replace('_', ' ')}{signup.status === 'checked_in' && signup.checkedInAt && ` since ${signup.checkedInAt.toDate().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}</p></div>
+                        {(signup.status === 'signed_up' || signup.status === 'checked_in') && (<select className="input py-1 text-xs w-auto" value={signup.department || ''} onChange={async (e) => { await assignDepartment(signup.id, e.target.value); await refreshSignups() }}><option value="">Dept...</option>{DEPARTMENTS.map((d) => (<option key={d.id} value={d.id}>{d.icon} {d.name}</option>))}</select>)}
+                        {(signup.status === 'checked_out' || signup.status === 'released') && signup.department && (<span className="badge bg-primary-100 text-primary-700 text-xs">{getDeptInfo(signup.department)?.icon} {getDeptInfo(signup.department)?.name}</span>)}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {signup.status === 'signed_up' && (<><button onClick={() => handleCheckIn(signup.id)} disabled={checkInLoading === signup.id} className="btn-primary text-xs py-1 px-3"><UserCheck size={12} className="inline mr-1" />{checkInLoading === signup.id ? '...' : 'In'}</button><button onClick={() => handleNoShow(signup.id)} className="text-gray-400 hover:text-red-500 p-1"><XCircle size={16} /></button></>)}
+                        {signup.status === 'checked_in' && (<><input type="number" step="0.25" min="0" className="input py-1 text-xs w-16 text-center" placeholder="hrs" value={manualHoursMap[signup.id] || ''} onChange={(e) => setManualHours(signup.id, e.target.value)} /><button onClick={() => handleCheckOut(signup.id, signup.userId)} disabled={checkInLoading === signup.id} className="btn-primary text-xs py-1 px-3"><UserX size={12} className="inline mr-1" />{checkInLoading === signup.id ? '...' : 'Out'}</button><button onClick={() => handleRelease(signup.id)} className="text-gray-400 hover:text-amber-500 p-1"><MinusCircle size={16} /></button></>)}
+                        {signup.status === 'checked_out' && (<span className="text-xs text-green-600 font-medium">{formatHours(signup.hoursLogged)}</span>)}
+                        {signup.status === 'released' && (<span className="text-xs text-amber-600">Released</span>)}
+                        {signup.status === 'no_show' && (<span className="text-xs text-red-500">No-show</span>)}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}</div>
               )}
             </div>
           )}
         </div>
       )}
+
+      {claimTokenModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setClaimTokenModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-semibold text-lg mb-4">Claim Link</h3>
+            <ClaimQRCode token={claimTokenModal.token} />
+            <button onClick={() => setClaimTokenModal(null)} className="btn-secondary w-full mt-4">Close</button>
+          </div>
+        </div>
+      )}
+
+      {ConfirmDialog}
     </div>
   )
 }
