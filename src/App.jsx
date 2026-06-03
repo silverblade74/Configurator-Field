@@ -3,8 +3,6 @@ import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Register from './pages/Register'
-import PendingApproval from './pages/PendingApproval'
-import ClaimProfile from './pages/ClaimProfile'
 import VolunteerDashboard from './pages/VolunteerDashboard'
 import Events from './pages/Events'
 import Ministries from './pages/Ministries'
@@ -14,6 +12,10 @@ import Profile from './pages/Profile'
 import AdminDashboard from './pages/AdminDashboard'
 import LeaderDashboard from './pages/LeaderDashboard'
 import KioskMode from './pages/KioskMode'
+import ClaimProfile from './pages/ClaimProfile'
+import Onboarding from './pages/Onboarding'
+import Reports from './pages/Reports'
+import AttendanceHistory from './pages/AttendanceHistory'
 
 export default function App() {
   return (
@@ -22,8 +24,14 @@ export default function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/claim/:token" element={<ClaimProfile />} />
 
+      <Route path="/onboarding" element={
+        <ProtectedRoute requiredRole={['admin']}>
+          <Onboarding />
+        </ProtectedRoute>
+      } />
+
       <Route path="/kiosk/:eventId" element={
-        <ProtectedRoute requiredRole="admin">
+        <ProtectedRoute requiredRole={['admin']}>
           <KioskMode />
         </ProtectedRoute>
       } />
@@ -33,25 +41,11 @@ export default function App() {
           <Layout />
         </ProtectedRoute>
       }>
-        <Route path="/pending-approval" element={<PendingApproval />} />
-        <Route path="/claim-profile" element={<ClaimProfile />} />
-        <Route path="/dashboard" element={
-          <ProtectedRoute requireApproved>
-            <VolunteerDashboard />
-          </ProtectedRoute>
-        } />
+        <Route path="/dashboard" element={<VolunteerDashboard />} />
         <Route path="/events" element={<Events />} />
         <Route path="/ministries" element={<Ministries />} />
-        <Route path="/leaderboard" element={
-          <ProtectedRoute requireApproved>
-            <Leaderboard />
-          </ProtectedRoute>
-        } />
-        <Route path="/badges" element={
-          <ProtectedRoute requireApproved>
-            <Badges />
-          </ProtectedRoute>
-        } />
+        <Route path="/leaderboard" element={<Leaderboard />} />
+        <Route path="/badges" element={<Badges />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/leaders" element={
           <ProtectedRoute requiredRole={['admin', 'ministry_leader']}>
@@ -59,10 +53,17 @@ export default function App() {
           </ProtectedRoute>
         } />
         <Route path="/admin" element={
-          <ProtectedRoute requiredRole="admin">
+          <ProtectedRoute requiredRole={['admin']}>
             <AdminDashboard />
           </ProtectedRoute>
         } />
+        <Route path="/reports" element={
+          <ProtectedRoute requiredRole={['admin']}>
+            <Reports />
+          </ProtectedRoute>
+        } />
+        <Route path="/history" element={<AttendanceHistory />} />
+        <Route path="/history/:userId" element={<AttendanceHistory />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />
