@@ -13,6 +13,7 @@ import AdminDashboard from './pages/AdminDashboard'
 import LeaderDashboard from './pages/LeaderDashboard'
 import KioskMode from './pages/KioskMode'
 import ClaimProfile from './pages/ClaimProfile'
+import PendingApproval from './pages/PendingApproval'
 import Onboarding from './pages/Onboarding'
 import Reports from './pages/Reports'
 import AttendanceHistory from './pages/AttendanceHistory'
@@ -41,11 +42,24 @@ export default function App() {
           <Layout />
         </ProtectedRoute>
       }>
-        <Route path="/dashboard" element={<VolunteerDashboard />} />
+        <Route path="/pending-approval" element={<PendingApproval />} />
+        <Route path="/dashboard" element={
+          <ProtectedRoute requireApproved>
+            <VolunteerDashboard />
+          </ProtectedRoute>
+        } />
         <Route path="/events" element={<Events />} />
         <Route path="/ministries" element={<Ministries />} />
-        <Route path="/leaderboard" element={<Leaderboard />} />
-        <Route path="/badges" element={<Badges />} />
+        <Route path="/leaderboard" element={
+          <ProtectedRoute requireApproved>
+            <Leaderboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/badges" element={
+          <ProtectedRoute requireApproved>
+            <Badges />
+          </ProtectedRoute>
+        } />
         <Route path="/profile" element={<Profile />} />
         <Route path="/leaders" element={
           <ProtectedRoute requiredRole={['admin', 'ministry_leader']}>
