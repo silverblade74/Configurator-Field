@@ -1,26 +1,29 @@
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
-export default function ProtectedRoute({ children, requiredRole }) {
-  const { currentUser, userProfile, loading } = useAuth()
+export default function ProtectedRoute({ children, requiredRole, requireApproved = false }) {
+  const { currentUser, loading, role, isApproved, isRejected } = useAuth()
+  const location = useLocation()
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600" />
       </div>
     )
   }
 
   if (!currentUser) {
-    return <Navigate to="/login" />
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
 
   if (requiredRole) {
-    const roles = Array.isArray(requiredRole) ? requiredRole : [requiredRole]
-    if (!roles.includes(userProfile?.role)) {
-      return <Navigate to="/dashboard" />
-    }
+    const allowed = Array.isArray(requiredRole) ? requiredRole : [requiredRole]
+    if (!allowed.includes(role)) return <Navigate to="/dashboard" replace />
+  }
+
+  if (requireApproved && !isApproved) {
+    return <Navigate to={isRejected ? '/profile' : '/pending-approval'} replace />
   }
 
   return children

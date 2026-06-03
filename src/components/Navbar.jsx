@@ -1,36 +1,30 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Menu, X, LogOut, User, LayoutDashboard, Calendar, Users, Trophy, Award, ClipboardList } from 'lucide-react'
+import { Menu, X, LogOut, User, LayoutDashboard, Calendar, Users, Trophy, Award, ClipboardList, Clock } from 'lucide-react'
 
 export default function Navbar() {
-  const { currentUser, userProfile, logout } = useAuth()
+  const { currentUser, userProfile, logout, isApproved, isAdmin, isLeader, isPending, isRejected } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
-
-  const isAdmin = userProfile?.role === 'admin'
-  const isLeader = userProfile?.role === 'ministry_leader'
 
   async function handleLogout() {
     await logout()
     navigate('/login')
   }
 
-  const navLinks = [
-    { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { to: '/events', label: 'Events', icon: Calendar },
-    { to: '/ministries', label: 'Ministries', icon: Users },
-    { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
-    { to: '/badges', label: 'Badges', icon: Award },
-  ]
-
-  if (isAdmin || isLeader) {
-    navLinks.push({ to: '/leaders', label: 'Leaders', icon: ClipboardList })
+  const navLinks = []
+  if (isApproved) navLinks.push({ to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard })
+  navLinks.push({ to: '/events', label: 'Events', icon: Calendar })
+  navLinks.push({ to: '/ministries', label: 'Ministries', icon: Users })
+  if (isApproved) {
+    navLinks.push({ to: '/leaderboard', label: 'Leaderboard', icon: Trophy })
+    navLinks.push({ to: '/badges', label: 'Badges', icon: Award })
   }
-  if (isAdmin) {
-    navLinks.push({ to: '/admin', label: 'Admin', icon: LayoutDashboard })
-  }
+  if (isPending || isRejected) navLinks.unshift({ to: '/pending-approval', label: isRejected ? 'Not Approved' : 'Pending', icon: Clock })
+  if (isAdmin || isLeader) navLinks.push({ to: '/leaders', label: 'Leaders', icon: ClipboardList })
+  if (isAdmin) navLinks.push({ to: '/admin', label: 'Admin', icon: LayoutDashboard })
 
   const isActive = (path) => location.pathname === path
 

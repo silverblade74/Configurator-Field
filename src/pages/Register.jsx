@@ -25,7 +25,7 @@ export default function Register() {
     setLoading(true)
     try {
       await register(email, password, displayName)
-      navigate('/dashboard')
+      navigate('/pending-approval')
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
         setError('An account with this email already exists')
@@ -40,7 +40,7 @@ export default function Register() {
     setError('')
     try {
       await loginWithGoogle()
-      navigate('/dashboard')
+      navigate('/pending-approval')
     } catch (err) {
       setError('Failed to sign up with Google.')
     }

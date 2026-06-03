@@ -7,7 +7,7 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const { login, loginWithGoogle } = useAuth()
+  const { login, loginWithGoogle, refreshProfile } = useAuth()
   const navigate = useNavigate()
 
   async function handleSubmit(e) {
@@ -16,7 +16,8 @@ export default function Login() {
     setLoading(true)
     try {
       await login(email, password)
-      navigate('/dashboard')
+      const profile = await refreshProfile()
+      navigate(profile?.approvalStatus === 'approved' ? '/dashboard' : '/pending-approval')
     } catch (err) {
       setError(err.code === 'auth/invalid-credential'
         ? 'Invalid email or password'
@@ -29,7 +30,8 @@ export default function Login() {
     setError('')
     try {
       await loginWithGoogle()
-      navigate('/dashboard')
+      const profile = await refreshProfile()
+      navigate(profile?.approvalStatus === 'approved' ? '/dashboard' : '/pending-approval')
     } catch (err) {
       setError('Failed to log in with Google.')
     }
