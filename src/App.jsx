@@ -4,6 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import PendingApproval from './pages/PendingApproval'
+import ClaimProfile from './pages/ClaimProfile'
 import VolunteerDashboard from './pages/VolunteerDashboard'
 import Events from './pages/Events'
 import Ministries from './pages/Ministries'
@@ -25,6 +26,7 @@ export default function App() {
         </ProtectedRoute>
       }>
         <Route path="/pending-approval" element={<PendingApproval />} />
+        <Route path="/claim-profile" element={<ClaimProfile />} />
         <Route path="/dashboard" element={
           <ProtectedRoute requireApproved>
             <VolunteerDashboard />

@@ -13,6 +13,7 @@ import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
 import AdminApprovals from './admin/AdminApprovals'
+import ManagedVolunteers from './admin/ManagedVolunteers'
 import {
   Users, Calendar, Clock, Award, Plus, Trash2, Edit3,
   ChevronDown, ChevronUp, UserCheck, UserX, BarChart3,
@@ -332,6 +333,8 @@ export default function AdminDashboard() {
             <h2 className="font-semibold text-lg">Manage Users ({users.length})</h2>
             <button onClick={() => setShowVolunteerForm(!showVolunteerForm)} className="btn-primary flex items-center space-x-1"><UserPlus size={16} /><span>Add Volunteer</span></button>
           </div>
+
+          <ManagedVolunteers onCreated={loadData} />
 
           {showVolunteerForm && (
             <form onSubmit={async (e) => { e.preventDefault(); if (!volunteerForm.displayName.trim()) return alert('Name is required'); try { await createManagedVolunteer(volunteerForm); setVolunteerForm({ displayName: '', email: '', phone: '' }); setShowVolunteerForm(false); await loadData() } catch (err) { alert('Failed to create volunteer') } }} className="card space-y-4">

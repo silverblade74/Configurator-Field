@@ -18,6 +18,7 @@ export default function Navbar() {
   if (isApproved) navLinks.push({ to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard })
   navLinks.push({ to: '/events', label: 'Events', icon: Calendar })
   navLinks.push({ to: '/ministries', label: 'Ministries', icon: Users })
+  navLinks.push({ to: '/claim-profile', label: 'Claim Profile', icon: User })
   if (isApproved) {
     navLinks.push({ to: '/leaderboard', label: 'Leaderboard', icon: Trophy })
     navLinks.push({ to: '/badges', label: 'Badges', icon: Award })
