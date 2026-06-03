@@ -5,9 +5,10 @@ import {
   createEvent, createMinistry, updateEvent, deleteEvent,
   updateMinistry, deleteMinistry, updateUserRole, getEventSignups,
   signUpForEvent, cancelSignup,
-  checkIn, checkOut, adminAddVolunteer, releaseVolunteer, markNoShow,
+  adminAddVolunteer, releaseVolunteer, markNoShow,
   createManagedVolunteer, deleteVolunteer, assignDepartment, updateVolunteerProfile,
 } from '../services/firestore'
+import { api } from '../lib/callables'
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
@@ -94,13 +95,13 @@ export default function AdminDashboard() {
   }
 
   async function refreshSignups() { const signups = await getEventSignups(checkInEventId); setEventSignups(signups) }
-  async function handleCheckIn(signupId) { setCheckInLoading(signupId); await checkIn(signupId); await refreshSignups(); setCheckInLoading(null) }
+  async function handleCheckIn(signupId) { setCheckInLoading(signupId); await api.checkInEventVolunteer({ signupId }); await refreshSignups(); setCheckInLoading(null) }
 
   async function handleCheckOut(signupId, userId) {
     setCheckInLoading(signupId)
     const manual = manualHoursMap[signupId]
     const hours = manual !== undefined && manual !== '' ? Number(manual) : null
-    await checkOut(signupId, userId, hours)
+    await api.checkOutEventVolunteer({ signupId, manualHours: hours })
     setManualHoursMap((prev) => { const n = { ...prev }; delete n[signupId]; return n })
     await refreshSignups(); setCheckInLoading(null); await loadData()
   }
@@ -110,7 +111,7 @@ export default function AdminDashboard() {
 
   async function handleBulkCheckIn() {
     setBulkLoading(true)
-    for (const s of eventSignups.filter((s) => s.status === 'signed_up')) { await checkIn(s.id) }
+    for (const s of eventSignups.filter((s) => s.status === 'signed_up')) { await api.checkInEventVolunteer({ signupId: s.id }) }
     await refreshSignups(); setBulkLoading(false)
   }
 
@@ -120,7 +121,7 @@ export default function AdminDashboard() {
     for (const s of eventSignups.filter((s) => s.status === 'checked_in')) {
       const manual = manualHoursMap[s.id]
       const hours = manual !== undefined && manual !== '' ? Number(manual) : null
-      await checkOut(s.id, s.userId, hours)
+      await api.checkOutEventVolunteer({ signupId: s.id, manualHours: hours })
     }
     setManualHoursMap({}); await refreshSignups(); setBulkLoading(false); await loadData()
   }

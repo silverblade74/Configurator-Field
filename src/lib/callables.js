@@ -21,4 +21,6 @@ export const api = {
   disableMinistry: callable('disableMinistry'),
   saveEvent: callable('saveEvent'),
   createEventSignup: callable('createEventSignup'),
+  checkInEventVolunteer: callable('checkInEventVolunteer'),
+  checkOutEventVolunteer: callable('checkOutEventVolunteer'),
 }

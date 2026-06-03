@@ -10,6 +10,7 @@ import {
 } from './users.js'
 import { archiveMinistry, upsertMinistry } from './ministries.js'
 import { signUpForEvent, upsertEvent } from './events.js'
+import { checkInVolunteer, checkOutVolunteer } from './attendance.js'
 
 const callableOptions = {
   region: 'us-central1',
@@ -28,3 +29,5 @@ export const saveMinistry = onCall(callableOptions, upsertMinistry)
 export const disableMinistry = onCall(callableOptions, archiveMinistry)
 export const saveEvent = onCall(callableOptions, upsertEvent)
 export const createEventSignup = onCall(callableOptions, signUpForEvent)
+export const checkInEventVolunteer = onCall(callableOptions, checkInVolunteer)
+export const checkOutEventVolunteer = onCall(callableOptions, checkOutVolunteer)
