@@ -27,6 +27,7 @@ function normalizeProfile(profile) {
     role: profile.role || ROLES.PENDING,
     approvalStatus: profile.approvalStatus || APPROVAL_STATUS.PENDING,
     assignedMinistryIds: Array.isArray(profile.assignedMinistryIds) ? profile.assignedMinistryIds : [],
+    requestedMinistryIds: Array.isArray(profile.requestedMinistryIds) ? profile.requestedMinistryIds : [],
   }
 }
 
@@ -35,9 +36,9 @@ export function AuthProvider({ children }) {
   const [userProfile, setUserProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  async function loadProfile(user) {
+  async function loadProfile(user, profileData = {}) {
     if (!user) return null
-    await api.ensureProfile()
+    await api.ensureProfile(profileData)
     const snap = await getDoc(doc(db, 'users', user.uid))
     if (!snap.exists()) return null
     const profile = normalizeProfile({ id: snap.id, ...snap.data() })
@@ -45,11 +46,11 @@ export function AuthProvider({ children }) {
     return profile
   }
 
-  async function register(email, password, displayName) {
+  async function register(email, password, displayName, requestedMinistryIds = []) {
     const result = await createUserWithEmailAndPassword(auth, email, password)
     await updateProfile(result.user, { displayName })
     await result.user.getIdToken(true)
-    await loadProfile(result.user)
+    await loadProfile(result.user, { displayName, requestedMinistryIds })
     return result
   }
 

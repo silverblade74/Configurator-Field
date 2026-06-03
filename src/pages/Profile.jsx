@@ -4,26 +4,30 @@ import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 import { formatHours, getLevel } from '../utils/gamification'
 import { User, Mail, Phone, Clock, Star, Award } from 'lucide-react'
+import Notice from '../components/Notice'
 
 export default function Profile() {
-  const { currentUser, userProfile, setUserProfile } = useAuth()
+  const { currentUser, userProfile, setUserProfile, approvalStatus, isApproved } = useAuth()
   const [editing, setEditing] = useState(false)
   const [displayName, setDisplayName] = useState(userProfile?.displayName || '')
   const [phone, setPhone] = useState(userProfile?.phone || '')
   const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState(null)
 
   async function handleSave() {
     setSaving(true)
+    setMessage(null)
     try {
-      await updateDoc(doc(db, 'users', currentUser.uid), {
+      await updateDoc(doc(db, 'users', userProfile.id), {
         displayName,
         phone,
         updatedAt: serverTimestamp(),
       })
       setUserProfile((prev) => ({ ...prev, displayName, phone }))
       setEditing(false)
+      setMessage({ type: 'success', text: 'Profile updated.' })
     } catch (err) {
-      alert('Failed to update profile')
+      setMessage({ type: 'error', text: 'Failed to update profile.' })
     }
     setSaving(false)
   }
@@ -33,6 +37,14 @@ export default function Profile() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <h1 className="text-2xl font-bold">My Profile</h1>
+
+      {message && <Notice type={message.type}>{message.text}</Notice>}
+      {approvalStatus && approvalStatus !== 'approved' && (
+        <Notice type={approvalStatus === 'rejected' ? 'error' : 'info'} title="Account status">
+          Your account status is {approvalStatus}. Event signup unlocks after approval.
+          {userProfile?.approvalNote && <span className="block mt-1 text-xs">Note: {userProfile.approvalNote}</span>}
+        </Notice>
+      )}
 
       <div className="card">
         <div className="flex items-center space-x-4 mb-6">
@@ -71,23 +83,25 @@ export default function Profile() {
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <div className="card text-center">
-          <Clock size={20} className="mx-auto text-primary-500 mb-1" />
-          <p className="text-xl font-bold">{formatHours(userProfile?.totalHours || 0)}</p>
-          <p className="text-xs text-gray-500">Hours Served</p>
+      {isApproved && (
+        <div className="grid grid-cols-3 gap-4">
+          <div className="card text-center">
+            <Clock size={20} className="mx-auto text-primary-500 mb-1" />
+            <p className="text-xl font-bold">{formatHours(userProfile?.totalHours || 0)}</p>
+            <p className="text-xs text-gray-500">Hours Served</p>
+          </div>
+          <div className="card text-center">
+            <Star size={20} className="mx-auto text-orange-500 mb-1" />
+            <p className="text-xl font-bold">{userProfile?.totalPoints || 0}</p>
+            <p className="text-xs text-gray-500">Points</p>
+          </div>
+          <div className="card text-center">
+            <Award size={20} className="mx-auto text-purple-500 mb-1" />
+            <p className="text-xl font-bold">{(userProfile?.badges || []).length}</p>
+            <p className="text-xs text-gray-500">Badges</p>
+          </div>
         </div>
-        <div className="card text-center">
-          <Star size={20} className="mx-auto text-orange-500 mb-1" />
-          <p className="text-xl font-bold">{userProfile?.totalPoints || 0}</p>
-          <p className="text-xs text-gray-500">Points</p>
-        </div>
-        <div className="card text-center">
-          <Award size={20} className="mx-auto text-purple-500 mb-1" />
-          <p className="text-xl font-bold">{(userProfile?.badges || []).length}</p>
-          <p className="text-xs text-gray-500">Badges</p>
-        </div>
-      </div>
+      )}
     </div>
   )
 }

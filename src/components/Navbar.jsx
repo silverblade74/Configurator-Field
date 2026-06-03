@@ -1,10 +1,31 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Menu, X, LogOut, User, LayoutDashboard, Calendar, Users, Trophy, Award, ClipboardList, Clock } from 'lucide-react'
+import {
+  Menu,
+  X,
+  LogOut,
+  User,
+  LayoutDashboard,
+  Calendar,
+  Users,
+  Trophy,
+  Award,
+  ClipboardList,
+  Clock,
+} from 'lucide-react'
 
 export default function Navbar() {
-  const { currentUser, userProfile, logout, isApproved, isAdmin, isLeader, isPending, isRejected } = useAuth()
+  const {
+    currentUser,
+    userProfile,
+    isApproved,
+    isAdmin,
+    isLeader,
+    isPending,
+    isRejected,
+    logout,
+  } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -23,26 +44,37 @@ export default function Navbar() {
     navLinks.push({ to: '/leaderboard', label: 'Leaderboard', icon: Trophy })
     navLinks.push({ to: '/badges', label: 'Badges', icon: Award })
   }
-  if (isPending || isRejected) navLinks.unshift({ to: '/pending-approval', label: isRejected ? 'Not Approved' : 'Pending', icon: Clock })
+  if (isPending || isRejected) {
+    navLinks.unshift({
+      to: '/pending-approval',
+      label: isRejected ? 'Account not approved' : 'Pending review',
+      icon: Clock,
+    })
+  }
   if (isAdmin || isLeader) navLinks.push({ to: '/leaders', label: 'Leaders', icon: ClipboardList })
   if (isAdmin) navLinks.push({ to: '/admin', label: 'Admin', icon: LayoutDashboard })
 
   const isActive = (path) => location.pathname === path
 
   return (
-    <nav className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
+    <nav className="sticky top-0 z-50 border-b border-gray-200 bg-white shadow-sm">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex h-16 justify-between">
           <div className="flex items-center">
-            <Link to="/dashboard" className="flex items-center space-x-2">
-              <span className="text-2xl">\u26EA</span>
-              <span className="font-bold text-lg text-primary-700 hidden sm:block">VolunteerHub</span>
+            <Link to={isApproved ? '/dashboard' : '/pending-approval'} className="flex items-center space-x-2">
+              <span className="text-2xl">⛪</span>
+              <span className="hidden text-lg font-bold text-primary-700 sm:block">VolunteerHub</span>
             </Link>
             {currentUser && (
-              <div className="hidden md:flex ml-8 space-x-1">
+              <div className="ml-8 hidden space-x-1 md:flex">
                 {navLinks.map((link) => (
-                  <Link key={link.to} to={link.to} className={`flex items-center space-x-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${isActive(link.to) ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}>
-                    <link.icon size={16} /><span>{link.label}</span>
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    className={`flex items-center space-x-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${isActive(link.to) ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}
+                  >
+                    <link.icon size={16} />
+                    <span>{link.label}</span>
                   </Link>
                 ))}
               </div>
@@ -51,11 +83,16 @@ export default function Navbar() {
           <div className="flex items-center space-x-3">
             {currentUser ? (
               <>
-                <Link to="/profile" className="hidden sm:flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900">
-                  <User size={16} /><span>{userProfile?.displayName || currentUser.email}</span>
+                <Link to="/profile" className="hidden items-center space-x-2 text-sm text-gray-600 hover:text-gray-900 sm:flex">
+                  <User size={16} />
+                  <span>{userProfile?.displayName || currentUser.email}</span>
                 </Link>
-                <button onClick={handleLogout} className="text-gray-500 hover:text-gray-700 p-2"><LogOut size={18} /></button>
-                <button className="md:hidden p-2" onClick={() => setMobileOpen(!mobileOpen)}>{mobileOpen ? <X size={20} /> : <Menu size={20} />}</button>
+                <button onClick={handleLogout} className="p-2 text-gray-500 hover:text-gray-700" aria-label="Log out">
+                  <LogOut size={18} />
+                </button>
+                <button className="p-2 md:hidden" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Open navigation">
+                  {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+                </button>
               </>
             ) : (
               <div className="flex space-x-2">
@@ -67,15 +104,22 @@ export default function Navbar() {
         </div>
       </div>
       {mobileOpen && currentUser && (
-        <div className="md:hidden border-t border-gray-200 bg-white">
-          <div className="px-4 py-3 space-y-1">
+        <div className="border-t border-gray-200 bg-white md:hidden">
+          <div className="space-y-1 px-4 py-3">
             {navLinks.map((link) => (
-              <Link key={link.to} to={link.to} onClick={() => setMobileOpen(false)} className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium ${isActive(link.to) ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}>
-                <link.icon size={16} /><span>{link.label}</span>
+              <Link
+                key={link.to}
+                to={link.to}
+                onClick={() => setMobileOpen(false)}
+                className={`flex items-center space-x-2 rounded-lg px-3 py-2 text-sm font-medium ${isActive(link.to) ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}
+              >
+                <link.icon size={16} />
+                <span>{link.label}</span>
               </Link>
             ))}
-            <Link to="/profile" onClick={() => setMobileOpen(false)} className="flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">
-              <User size={16} /><span>Profile</span>
+            <Link to="/profile" onClick={() => setMobileOpen(false)} className="flex items-center space-x-2 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100">
+              <User size={16} />
+              <span>Profile</span>
             </Link>
           </div>
         </div>

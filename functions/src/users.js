@@ -22,14 +22,40 @@ function hashCode(code) {
   return createHash('sha256').update(code).digest('hex')
 }
 
-export async function ensureUserProfileImpl({ actorUid, authToken }) {
+function cleanStringList(value, maxItems = 20) {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, maxItems)
+}
+
+export async function ensureUserProfileImpl({ actorUid, authToken, data = {} }) {
   if (!actorUid) throw permissionDenied('Authenticated user is required.')
   const ref = db.collection('users').doc(actorUid)
   const snap = await ref.get()
-  if (snap.exists) return { id: snap.id, ...snap.data() }
+  if (snap.exists) {
+    const existing = snap.data()
+    const updates = {}
+    const requestedMinistryIds = cleanStringList(data?.requestedMinistryIds)
+    const displayName = cleanString(data?.displayName || '', 'displayName', { max: 120 })
+    if (displayName && !existing.displayName) updates.displayName = displayName
+    if (requestedMinistryIds.length > 0 && (!Array.isArray(existing.requestedMinistryIds) || existing.requestedMinistryIds.length === 0)) {
+      updates.requestedMinistryIds = requestedMinistryIds
+    }
+    if (Object.keys(updates).length > 0) {
+      updates.updatedAt = FieldValue.serverTimestamp()
+      updates.updatedBy = actorUid
+      await ref.update(updates)
+      return { id: snap.id, ...existing, ...updates }
+    }
+    return { id: snap.id, ...existing }
+  }
 
   const email = cleanString(authToken?.email || '', 'email', { max: 320 })
-  const displayName = cleanString(authToken?.name || authToken?.displayName || email, 'displayName', { max: 120 })
+  const displayName = cleanString(data?.displayName || authToken?.name || authToken?.displayName || email, 'displayName', { max: 120 })
+  const requestedMinistryIds = cleanStringList(data?.requestedMinistryIds)
   const now = FieldValue.serverTimestamp()
   const profile = {
     uid: actorUid,
@@ -47,6 +73,7 @@ export async function ensureUserProfileImpl({ actorUid, authToken }) {
     claimedBy: actorUid,
     claimedAt: now,
     assignedMinistryIds: [],
+    requestedMinistryIds,
     totalHours: 0,
     totalPoints: 0,
     badges: [],
@@ -199,6 +226,62 @@ export async function createManagedVolunteerImpl({ actor, data }) {
   return { ok: true, userId: ref.id }
 }
 
+export async function updateUserProfileAsAdminImpl({ actor, targetUserId, data }) {
+  assertAdmin(actor)
+  if (!targetUserId) throw invalidArgument('User id is required.')
+  const ref = db.collection('users').doc(targetUserId)
+  const snap = await ref.get()
+  if (!snap.exists) throw notFound('User not found.')
+  const updates = {
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: actor.id,
+  }
+  if (Object.prototype.hasOwnProperty.call(data || {}, 'displayName')) {
+    updates.displayName = cleanString(data.displayName, 'displayName', { max: 120 })
+  }
+  if (Object.prototype.hasOwnProperty.call(data || {}, 'email')) {
+    updates.email = cleanString(data.email || '', 'email', { max: 320 })
+  }
+  if (Object.prototype.hasOwnProperty.call(data || {}, 'phone')) {
+    updates.phone = cleanString(data.phone || '', 'phone', { max: 40 })
+  }
+  if (Object.prototype.hasOwnProperty.call(data || {}, 'assignedDepartment')) {
+    updates.assignedDepartment = cleanString(data.assignedDepartment || '', 'assignedDepartment', { max: 80 }) || null
+  }
+  if (Object.prototype.hasOwnProperty.call(data || {}, 'assignedMinistryIds')) {
+    updates.assignedMinistryIds = cleanStringList(data.assignedMinistryIds)
+  }
+  await ref.update(updates)
+  await writeAuditLog(db, {
+    actor,
+    action: 'user.updateProfile',
+    targetType: 'user',
+    targetId: targetUserId,
+    metadata: { fields: Object.keys(updates).filter((key) => !['updatedAt', 'updatedBy'].includes(key)) },
+  })
+  return { ok: true }
+}
+
+export async function deleteManagedVolunteerImpl({ actor, targetUserId }) {
+  assertAdmin(actor)
+  if (!targetUserId) throw invalidArgument('User id is required.')
+  const ref = db.collection('users').doc(targetUserId)
+  const snap = await ref.get()
+  if (!snap.exists) throw notFound('User not found.')
+  const user = snap.data()
+  if (!user.managed || user.claimed || user.uid) {
+    throw failedPrecondition('Only unclaimed managed volunteer profiles can be deleted.')
+  }
+  await ref.delete()
+  await writeAuditLog(db, {
+    actor,
+    action: 'user.deleteManaged',
+    targetType: 'user',
+    targetId: targetUserId,
+  })
+  return { ok: true }
+}
+
 export async function createClaimCodeImpl({ actor, managedUserId }) {
   assertAdmin(actor)
   const userRef = db.collection('users').doc(managedUserId)
@@ -267,7 +350,7 @@ export async function claimManagedProfileImpl({ actorUid, code }) {
 }
 
 export async function ensureUserProfile(request) {
-  return ensureUserProfileImpl({ actorUid: request.auth?.uid, authToken: request.auth?.token })
+  return ensureUserProfileImpl({ actorUid: request.auth?.uid, authToken: request.auth?.token, data: request.data || {} })
 }
 
 export async function approveUser(request) {
@@ -293,6 +376,16 @@ export async function setUserRole(request) {
 export async function createManagedVolunteer(request) {
   const actor = await getActor(db, request)
   return createManagedVolunteerImpl({ actor, data: request.data || {} })
+}
+
+export async function updateUserProfileAsAdmin(request) {
+  const actor = await getActor(db, request)
+  return updateUserProfileAsAdminImpl({ actor, targetUserId: request.data?.userId, data: request.data || {} })
+}
+
+export async function deleteManagedVolunteer(request) {
+  const actor = await getActor(db, request)
+  return deleteManagedVolunteerImpl({ actor, targetUserId: request.data?.userId })
 }
 
 export async function createClaimCode(request) {

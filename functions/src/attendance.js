@@ -1,5 +1,5 @@
 import { db, FieldValue, Timestamp } from './admin.js'
-import { assertCanManageEvent, getActor } from './authz.js'
+import { assertCanManageEvent, canManageEvent, getActor } from './authz.js'
 import { failedPrecondition, invalidArgument, notFound } from './errors.js'
 import { pointsForHours, badgeIdsForUser } from './gamification.js'
 import { writeAuditLog } from './audit.js'
@@ -18,6 +18,76 @@ async function loadSignupEvent(signupId) {
   const eventSnap = await db.collection('events').doc(signup.eventId).get()
   if (!eventSnap.exists) throw notFound('Event not found.')
   return { signupRef, signup, event: { id: eventSnap.id, ...eventSnap.data() } }
+}
+
+function assertCanManageSignup(actor, signup, event, { allowSelf = false } = {}) {
+  if (allowSelf && signup.userId === actor.id) return
+  if (!canManageEvent(actor, event)) {
+    throw failedPrecondition('You cannot manage this signup.')
+  }
+}
+
+export async function cancelSignup(request) {
+  const actor = await getActor(db, request)
+  const signupId = request.data?.signupId
+  if (!signupId) throw invalidArgument('Signup id is required.')
+  const { signupRef, signup, event } = await loadSignupEvent(signupId)
+  assertCanManageSignup(actor, signup, event, { allowSelf: true })
+  await db.runTransaction(async (tx) => {
+    tx.delete(signupRef)
+    tx.update(db.collection('events').doc(event.id), {
+      signupCount: FieldValue.increment(-1),
+      updatedAt: FieldValue.serverTimestamp(),
+    })
+  })
+  await writeAuditLog(db, { actor, action: 'eventSignup.cancel', targetType: 'eventSignup', targetId: signupId, metadata: { eventId: event.id } })
+  return { ok: true }
+}
+
+export async function updateSignupDepartment(request) {
+  const actor = await getActor(db, request)
+  const signupId = request.data?.signupId
+  if (!signupId) throw invalidArgument('Signup id is required.')
+  const departmentId = typeof request.data?.department === 'string' ? request.data.department.trim() : ''
+  const { signupRef, signup, event } = await loadSignupEvent(signupId)
+  assertCanManageSignup(actor, signup, event)
+  await signupRef.update({
+    departmentId: departmentId || null,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: actor.id,
+  })
+  await writeAuditLog(db, { actor, action: 'eventSignup.assignDepartment', targetType: 'eventSignup', targetId: signupId, metadata: { eventId: event.id, departmentId } })
+  return { ok: true }
+}
+
+export async function releaseVolunteer(request) {
+  const actor = await getActor(db, request)
+  const signupId = request.data?.signupId
+  if (!signupId) throw invalidArgument('Signup id is required.')
+  const { signupRef, signup, event } = await loadSignupEvent(signupId)
+  assertCanManageSignup(actor, signup, event)
+  await signupRef.update({
+    status: 'released',
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: actor.id,
+  })
+  await writeAuditLog(db, { actor, action: 'eventSignup.release', targetType: 'eventSignup', targetId: signupId, metadata: { eventId: event.id } })
+  return { ok: true }
+}
+
+export async function markNoShow(request) {
+  const actor = await getActor(db, request)
+  const signupId = request.data?.signupId
+  if (!signupId) throw invalidArgument('Signup id is required.')
+  const { signupRef, signup, event } = await loadSignupEvent(signupId)
+  assertCanManageSignup(actor, signup, event)
+  await signupRef.update({
+    status: 'no_show',
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: actor.id,
+  })
+  await writeAuditLog(db, { actor, action: 'eventSignup.noShow', targetType: 'eventSignup', targetId: signupId, metadata: { eventId: event.id } })
+  return { ok: true }
 }
 
 export async function checkInVolunteer(request) {

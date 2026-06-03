@@ -35,6 +35,23 @@ export async function upsertEvent(request) {
   return { ok: true, eventId: id }
 }
 
+export async function archiveEvent(request) {
+  const actor = await getActor(db, request)
+  assertAdmin(actor)
+  const id = request.data?.id
+  if (!id) throw invalidArgument('Event id is required.')
+  const ref = db.collection('events').doc(id)
+  const snap = await ref.get()
+  if (!snap.exists) throw notFound('Event not found.')
+  await ref.update({
+    status: 'cancelled',
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: actor.id,
+  })
+  await writeAuditLog(db, { actor, action: 'event.archive', targetType: 'event', targetId: id })
+  return { ok: true }
+}
+
 export async function signUpForEvent(request) {
   const actor = await getActor(db, request)
   if (actor.role === ROLES.PENDING || actor.approvalStatus !== 'approved') {
@@ -79,7 +96,7 @@ export async function signUpForEvent(request) {
     status: 'signed_up',
     source: targetUserId === actor.id ? 'self' : 'admin',
     ministryId: event.ministryId,
-    departmentId: event.ministryId,
+    departmentId: cleanText(request.data?.departmentId, 'departmentId') || event.ministryId,
     sessions: [],
     hoursLogged: 0,
     createdAt: FieldValue.serverTimestamp(),

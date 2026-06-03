@@ -1,8 +1,13 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
-export default function ProtectedRoute({ children, requiredRole, requireApproved = false }) {
-  const { currentUser, loading, role, isApproved, isRejected } = useAuth()
+export default function ProtectedRoute({
+  children,
+  requiredRole,
+  requireApproved = false,
+  allowPending = false,
+}) {
+  const { currentUser, loading, role, approvalStatus, isApproved, isRejected } = useAuth()
   const location = useLocation()
 
   if (loading) {
@@ -14,7 +19,8 @@ export default function ProtectedRoute({ children, requiredRole, requireApproved
   }
 
   if (!currentUser) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />
+    const redirect = `${location.pathname}${location.search}`
+    return <Navigate to="/login" replace state={{ from: redirect }} />
   }
 
   if (requiredRole) {
@@ -24,6 +30,10 @@ export default function ProtectedRoute({ children, requiredRole, requireApproved
 
   if (requireApproved && !isApproved) {
     return <Navigate to={isRejected ? '/profile' : '/pending-approval'} replace />
+  }
+
+  if (allowPending && approvalStatus === 'approved') {
+    return <Navigate to="/dashboard" replace />
   }
 
   return children

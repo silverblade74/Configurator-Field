@@ -1,18 +1,20 @@
-import { AlertTriangle, CheckCircle2, Info, XCircle } from 'lucide-react'
+import { CheckCircle2, Info, AlertTriangle, XCircle } from 'lucide-react'
 
 const styles = {
-  info: { Icon: Info, className: 'border-blue-200 bg-blue-50 text-blue-800' },
-  success: { Icon: CheckCircle2, className: 'border-green-200 bg-green-50 text-green-800' },
-  warning: { Icon: AlertTriangle, className: 'border-amber-200 bg-amber-50 text-amber-800' },
-  error: { Icon: XCircle, className: 'border-red-200 bg-red-50 text-red-800' },
+  info: { wrap: 'bg-blue-50 text-blue-800 border-blue-200', Icon: Info },
+  success: { wrap: 'bg-green-50 text-green-800 border-green-200', Icon: CheckCircle2 },
+  warning: { wrap: 'bg-amber-50 text-amber-800 border-amber-200', Icon: AlertTriangle },
+  error: { wrap: 'bg-red-50 text-red-800 border-red-200', Icon: XCircle },
 }
 
 export default function Notice({ type = 'info', title, children }) {
-  const { Icon, className } = styles[type] || styles.info
+  const { wrap, Icon } = styles[type] || styles.info
+  const role = type === 'error' ? 'alert' : 'status'
+  const ariaLive = type === 'error' ? undefined : 'polite'
   return (
-    <div className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${className}`} role={type === 'error' ? 'alert' : 'status'}>
-      <Icon size={18} className="mt-0.5 shrink-0" />
-      <div className="min-w-0">
+    <div role={role} aria-live={ariaLive} className={`flex gap-2 items-start rounded-lg border p-3 text-sm ${wrap}`}>
+      <Icon size={18} className="shrink-0 mt-0.5" />
+      <div className="min-w-0 flex-1">
         {title && <p className="font-semibold">{title}</p>}
         <div>{children}</div>
       </div>
