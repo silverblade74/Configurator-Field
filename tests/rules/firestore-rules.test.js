@@ -8,8 +8,10 @@ import { readFileSync } from 'node:fs'
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore'
 
 let testEnv
+const describeWithEmulator = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip
 
 beforeAll(async () => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) return
   testEnv = await initializeTestEnvironment({
     projectId: 'volunteerhub-rules-test',
     firestore: {
@@ -68,14 +70,14 @@ beforeEach(async () => {
 })
 
 afterAll(async () => {
-  await testEnv.cleanup()
+  await testEnv?.cleanup()
 })
 
 function authed(uid) {
   return testEnv.authenticatedContext(uid, { sub: uid }).firestore()
 }
 
-describe('users rules', () => {
+describeWithEmulator('users rules', () => {
   it('allows users to read themselves', async () => {
     await assertSucceeds(getDoc(doc(authed('volunteer'), 'users/volunteer')))
   })
@@ -99,7 +101,7 @@ describe('users rules', () => {
   })
 })
 
-describe('sensitive writes', () => {
+describeWithEmulator('sensitive writes', () => {
   it('blocks client event signup creation', async () => {
     await assertFails(setDoc(doc(authed('volunteer'), 'eventSignups/newSignup'), {
       userId: 'volunteer',
@@ -123,7 +125,7 @@ describe('sensitive writes', () => {
   })
 })
 
-describe('scoped reads', () => {
+describeWithEmulator('scoped reads', () => {
   it('allows assigned leader to read signup', async () => {
     await assertSucceeds(getDoc(doc(authed('leader'), 'eventSignups/signup1')))
   })
