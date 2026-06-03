@@ -58,15 +58,23 @@ export function AuthProvider({ children }) {
 
   async function login(email, password) {
     const result = await signInWithEmailAndPassword(auth, email, password)
-    const profile = await createUserProfile(result.user)
-    setUserProfile(profile)
+    try {
+      const profile = await createUserProfile(result.user)
+      setUserProfile(profile)
+    } catch (err) {
+      console.error('Profile load after login failed:', err)
+    }
     return result
   }
 
   async function loginWithGoogle() {
     const result = await signInWithPopup(auth, googleProvider)
-    const profile = await createUserProfile(result.user)
-    setUserProfile(profile)
+    try {
+      const profile = await createUserProfile(result.user)
+      setUserProfile(profile)
+    } catch (err) {
+      console.error('Profile load after Google login failed:', err)
+    }
     return result
   }
 

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
+import { useAuth } from './AuthContext'
 import { getBrandingSettings } from '../services/firestore'
 
 const DEFAULTS = {
@@ -14,11 +15,17 @@ export function useBranding() {
 }
 
 export function BrandingProvider({ children }) {
+  const { currentUser, loading: authLoading } = useAuth()
   const [branding, setBranding] = useState({ ...DEFAULTS, loading: true })
 
   useEffect(() => {
+    if (authLoading) return
+    if (!currentUser) {
+      setBranding({ ...DEFAULTS, loading: false })
+      return
+    }
     loadBranding()
-  }, [])
+  }, [currentUser, authLoading])
 
   async function loadBranding() {
     try {
