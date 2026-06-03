@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import {
   createUserWithEmailAndPassword,
+  getRedirectResult,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   updateProfile,
 } from 'firebase/auth'
@@ -11,8 +13,10 @@ import { doc, getDoc } from 'firebase/firestore'
 import { auth, db, googleProvider } from '../firebase'
 import { APPROVAL_STATUS, ROLES } from '../lib/schema'
 import { api } from '../lib/callables'
+import { shouldUseGoogleRedirectFallback } from '../lib/authErrors'
 
 const AuthContext = createContext(null)
+const GOOGLE_REDIRECT_TO_KEY = 'volunteerhub:googleRedirectTo'
 
 export function useAuth() {
   const context = useContext(AuthContext)
@@ -60,10 +64,19 @@ export function AuthProvider({ children }) {
     return result
   }
 
-  async function loginWithGoogle() {
-    const result = await signInWithPopup(auth, googleProvider)
-    await loadProfile(result.user)
-    return result
+  async function loginWithGoogle({ redirectTo } = {}) {
+    try {
+      const result = await signInWithPopup(auth, googleProvider)
+      await loadProfile(result.user)
+      return result
+    } catch (err) {
+      if (!shouldUseGoogleRedirectFallback(err)) throw err
+      if (redirectTo && typeof window !== 'undefined') {
+        window.sessionStorage.setItem(GOOGLE_REDIRECT_TO_KEY, redirectTo)
+      }
+      await signInWithRedirect(auth, googleProvider)
+      return { redirecting: true }
+    }
   }
 
   async function refreshProfile() {
@@ -78,6 +91,23 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
+    async function completeGoogleRedirect() {
+      try {
+        const result = await getRedirectResult(auth)
+        if (!result?.user) return
+        setCurrentUser(result.user)
+        await loadProfile(result.user)
+        const redirectTo = window.sessionStorage.getItem(GOOGLE_REDIRECT_TO_KEY)
+        window.sessionStorage.removeItem(GOOGLE_REDIRECT_TO_KEY)
+        if (redirectTo && redirectTo !== `${window.location.pathname}${window.location.search}`) {
+          window.location.assign(redirectTo)
+        }
+      } catch (err) {
+        console.error('Google redirect sign-in failed:', err)
+      }
+    }
+
+    completeGoogleRedirect()
     return onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user)
       try {
