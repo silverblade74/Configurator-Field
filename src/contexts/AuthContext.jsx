@@ -7,8 +7,9 @@ import {
   onAuthStateChanged,
   updateProfile,
 } from 'firebase/auth'
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc } from 'firebase/firestore'
 import { auth, db, googleProvider } from '../firebase'
+import { api } from '../lib/callables'
 
 const AuthContext = createContext()
 
@@ -22,30 +23,16 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   async function createUserProfile(user, extraData = {}) {
+    const displayName = user.displayName || extraData.displayName || ''
+
+    // Call the Cloud Function to ensure profile exists server-side
+    // (creates with role: 'pending', approvalStatus: 'pending' if new)
+    await api.ensureProfile({ displayName })
+
+    // Read back the profile doc to get the full data
     const userRef = doc(db, 'users', user.uid)
     const snapshot = await getDoc(userRef)
-
-    if (!snapshot.exists()) {
-      await setDoc(userRef, {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName || extraData.displayName || '',
-        photoURL: user.photoURL || '',
-        phone: extraData.phone || '',
-        role: 'volunteer',
-        ministries: [],
-        totalHours: 0,
-        totalPoints: 0,
-        badges: [],
-        streak: 0,
-        lastServedDate: null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
-    }
-
-    const updatedSnapshot = await getDoc(userRef)
-    return { id: updatedSnapshot.id, ...updatedSnapshot.data() }
+    return { id: snapshot.id, ...snapshot.data() }
   }
 
   async function register(email, password, displayName) {
@@ -107,10 +94,21 @@ export function AuthProvider({ children }) {
     return null
   }, [])
 
+  // Computed properties derived from userProfile
+  const role = userProfile?.role || 'pending'
+  const approvalStatus = userProfile?.approvalStatus || 'pending'
+  const isAdmin = role === 'admin'
+  const isLeader = role === 'ministry_leader'
+  const isApproved = approvalStatus === 'approved' || isAdmin || isLeader
+  const isPending = approvalStatus === 'pending' && !isAdmin && !isLeader
+  const isRejected = approvalStatus === 'rejected'
+
   const value = {
     currentUser, userProfile, setUserProfile,
     register, login, loginWithGoogle, logout,
     loading, getPendingClaimRedirect,
+    role, approvalStatus,
+    isAdmin, isLeader, isApproved, isPending, isRejected,
   }
 
   return (
