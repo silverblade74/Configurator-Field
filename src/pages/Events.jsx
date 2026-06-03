@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { getEvents, getMinistries, signUpForEvent, getUserSignups, cancelSignup } from '../services/firestore'
+import { getEvents, getMinistries, getUserSignups, cancelSignup } from '../services/firestore'
+import { api } from '../lib/callables'
 import EmptyState from '../components/EmptyState'
 import { Calendar, MapPin, Users, Clock, Check, X } from 'lucide-react'
 
 export default function Events() {
-  const { userProfile } = useAuth()
+  const { userProfile, isApproved } = useAuth()
   const [events, setEvents] = useState([])
   const [ministries, setMinistries] = useState([])
   const [userSignups, setUserSignups] = useState([])
@@ -31,7 +32,7 @@ export default function Events() {
   async function handleSignUp(eventId) {
     setActionLoading(eventId)
     try {
-      await signUpForEvent(eventId, userProfile.uid, userProfile.displayName)
+      await api.createEventSignup({ eventId })
       await loadData()
     } catch (err) { alert(err.message) }
     setActionLoading(null)
@@ -118,8 +119,8 @@ export default function Events() {
                         <X size={14} /><span>{actionLoading === event.id ? 'Cancelling...' : 'Cancel Signup'}</span>
                       </button>
                     ) : (
-                      <button onClick={() => handleSignUp(event.id)} disabled={actionLoading === event.id || (event.maxVolunteers && event.signupCount >= event.maxVolunteers)} className="btn-primary w-full">
-                        {actionLoading === event.id ? 'Signing up...' : 'Sign Up'}
+                      <button onClick={() => handleSignUp(event.id)} disabled={!isApproved || actionLoading === event.id || (event.maxVolunteers && event.signupCount >= event.maxVolunteers)} className="btn-primary w-full">
+                        {actionLoading === event.id ? 'Signing up...' : isApproved ? 'Sign Up' : 'Approval Required'}
                       </button>
                     )}
                   </div>

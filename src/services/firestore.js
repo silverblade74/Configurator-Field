@@ -3,6 +3,17 @@ import {
   query, where, orderBy, limit, serverTimestamp, increment, Timestamp,
 } from 'firebase/firestore'
 import { db } from '../firebase'
+import { api } from '../lib/callables'
+
+function toDateMillis(value) {
+  if (!value) return null
+  if (typeof value.toMillis === 'function') return value.toMillis()
+  if (value instanceof Date) return value.getTime()
+  const numeric = Number(value)
+  if (Number.isFinite(numeric)) return numeric
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
 
 // --- Ministries ---
 
@@ -13,15 +24,15 @@ export async function getMinistries() {
 }
 
 export async function createMinistry(data) {
-  return addDoc(collection(db, 'ministries'), { ...data, memberCount: 0, createdAt: serverTimestamp() })
+  return api.saveMinistry(data)
 }
 
 export async function updateMinistry(id, data) {
-  return updateDoc(doc(db, 'ministries', id), { ...data, updatedAt: serverTimestamp() })
+  return api.saveMinistry({ id, ...data })
 }
 
 export async function deleteMinistry(id) {
-  return deleteDoc(doc(db, 'ministries', id))
+  return api.disableMinistry({ id })
 }
 
 // --- Events ---
@@ -42,11 +53,11 @@ export async function getEvent(id) {
 }
 
 export async function createEvent(data) {
-  return addDoc(collection(db, 'events'), { ...data, signupCount: 0, createdAt: serverTimestamp() })
+  return api.saveEvent({ ...data, dateMs: toDateMillis(data.date) })
 }
 
 export async function updateEvent(id, data) {
-  return updateDoc(doc(db, 'events', id), { ...data, updatedAt: serverTimestamp() })
+  return api.saveEvent({ id, ...data, dateMs: toDateMillis(data.date) })
 }
 
 export async function deleteEvent(id) {
@@ -56,15 +67,7 @@ export async function deleteEvent(id) {
 // --- Event Signups ---
 
 export async function signUpForEvent(eventId, userId, userName) {
-  const existing = query(collection(db, 'eventSignups'), where('eventId', '==', eventId), where('userId', '==', userId))
-  const snapshot = await getDocs(existing)
-  if (!snapshot.empty) throw new Error('Already signed up')
-
-  await addDoc(collection(db, 'eventSignups'), {
-    eventId, userId, userName, status: 'signed_up',
-    checkedInAt: null, checkedOutAt: null, hoursLogged: 0, department: null, createdAt: serverTimestamp(),
-  })
-  await updateDoc(doc(db, 'events', eventId), { signupCount: increment(1) })
+  return api.createEventSignup({ eventId, userId, userName })
 }
 
 export async function cancelSignup(signupId, eventId) {

@@ -17,4 +17,8 @@ export const api = {
   createManagedVolunteerProfile: callable('createManagedVolunteerProfile'),
   createProfileClaimCode: callable('createProfileClaimCode'),
   claimManagedVolunteerProfile: callable('claimManagedVolunteerProfile'),
+  saveMinistry: callable('saveMinistry'),
+  disableMinistry: callable('disableMinistry'),
+  saveEvent: callable('saveEvent'),
+  createEventSignup: callable('createEventSignup'),
 }
