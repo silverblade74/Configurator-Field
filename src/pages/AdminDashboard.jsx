@@ -11,6 +11,7 @@ import {
 import { formatHours } from '../utils/gamification'
 import { DEPARTMENTS } from '../utils/departments'
 import StatCard from '../components/StatCard'
+import AdminApprovals from './admin/AdminApprovals'
 import {
   Users, Calendar, Clock, Award, Plus, Trash2, Edit3,
   ChevronDown, ChevronUp, UserCheck, UserX, BarChart3,
@@ -181,6 +182,7 @@ export default function AdminDashboard() {
 
       {tab === 'overview' && (
         <div className="space-y-6">
+          <AdminApprovals />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <StatCard title="Total Volunteers" value={totalVolunteers} icon={Users} color="primary" />
             <StatCard title="Total Hours" value={formatHours(totalHours)} icon={Clock} color="green" />
